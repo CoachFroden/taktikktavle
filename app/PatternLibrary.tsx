@@ -6,7 +6,7 @@ type Point = { x: number; y: number };
 type PlayerPoint = Point & { id: number };
 type PatternScene = {
   label: string;
-  activeBlue: number;
+  pressBlue: number;
   ballRed: number;
   blue: PlayerPoint[];
   red: PlayerPoint[];
@@ -20,61 +20,61 @@ const redBase: PlayerPoint[] = [
 ];
 
 // Fire faste, manuelt definerte scener basert på referansebildene.
-// Ingen automatisk vurdering av press, sikring eller posisjonering skjer her.
+// Viktig: gul markering viser PRESseren, ikke spilleren som var valgt i editoren på referansebildet.
 const scenes: PatternScene[] = [
   {
-    label: "Rød 1 → Blå 6",
-    activeBlue: 6,
+    label: "Rød 1 → Blå 4 presser",
+    pressBlue: 4,
     ballRed: 1,
     red: redBase,
     blue: [
       { id: 1, x: 210, y: 260 },
       { id: 2, x: 210, y: 390 },
       { id: 3, x: 260, y: 485 },
-      { id: 4, x: 270, y: 155 },
+      { id: 4, x: 350, y: 95 },
       { id: 5, x: 495, y: 50 },
-      { id: 6, x: 500, y: 600 },
+      { id: 6, x: 430, y: 575 },
     ],
   },
   {
-    label: "Rød 2 → Blå 3",
-    activeBlue: 3,
+    label: "Rød 2 → Blå 1 presser",
+    pressBlue: 1,
     ballRed: 2,
     red: redBase,
     blue: [
-      { id: 1, x: 350, y: 235 },
+      { id: 1, x: 350, y: 245 },
       { id: 2, x: 270, y: 335 },
-      { id: 3, x: 268, y: 445 },
+      { id: 3, x: 285, y: 445 },
       { id: 4, x: 275, y: 155 },
-      { id: 5, x: 500, y: 50 },
-      { id: 6, x: 500, y: 600 },
+      { id: 5, x: 470, y: 65 },
+      { id: 6, x: 440, y: 570 },
     ],
   },
   {
-    label: "Rød 3 → Blå 4",
-    activeBlue: 4,
+    label: "Rød 3 → Blå 2 presser",
+    pressBlue: 2,
     ballRed: 3,
     red: redBase,
     blue: [
       { id: 1, x: 285, y: 295 },
-      { id: 2, x: 380, y: 390 },
-      { id: 3, x: 300, y: 455 },
+      { id: 2, x: 350, y: 410 },
+      { id: 3, x: 300, y: 480 },
       { id: 4, x: 275, y: 180 },
-      { id: 5, x: 500, y: 50 },
-      { id: 6, x: 500, y: 600 },
+      { id: 5, x: 445, y: 70 },
+      { id: 6, x: 470, y: 580 },
     ],
   },
   {
-    label: "Rød 4 → Blå 5",
-    activeBlue: 5,
+    label: "Rød 4 → Blå 3 presser",
+    pressBlue: 3,
     ballRed: 4,
     red: redBase,
     blue: [
       { id: 1, x: 250, y: 365 },
       { id: 2, x: 280, y: 445 },
-      { id: 3, x: 350, y: 525 },
+      { id: 3, x: 365, y: 545 },
       { id: 4, x: 245, y: 280 },
-      { id: 5, x: 280, y: 125 },
+      { id: 5, x: 430, y: 100 },
       { id: 6, x: 500, y: 600 },
     ],
   },
@@ -93,6 +93,7 @@ export default function PatternLibrary() {
 
   const scene = scenes[sceneIndex];
   const ballCarrier = findPlayer(scene.red, scene.ballRed);
+  const presser = findPlayer(scene.blue, scene.pressBlue);
 
   useEffect(() => {
     if (!playing || !open) return;
@@ -127,7 +128,7 @@ export default function PatternLibrary() {
               <div>
                 <span className="patternEyebrow">FERDIG MØNSTER · 4 FASTE SCENER</span>
                 <h2>Forsvarsmønster – Frode 1</h2>
-                <p>Dette mønsteret følger de fire referansebildene. Posisjonene er manuelt satt scene for scene – appen regner ikke ut hvem som skal gå.</p>
+                <p>Ballfører flyttes fra rød 1 til 4. Den nærmeste blå forsvarsspilleren støter ut, mens resten forskyver etter de manuelt definerte posisjonene fra referansebildene.</p>
               </div>
               <button className="patternClose" type="button" onClick={() => setOpen(false)} aria-label="Lukk">×</button>
             </header>
@@ -141,9 +142,8 @@ export default function PatternLibrary() {
                       <stop offset="55%" stopColor="#237e49" />
                       <stop offset="100%" stopColor="#125b36" />
                     </linearGradient>
-                    <filter id="patternGlow" x="-70%" y="-70%" width="240%" height="240%">
-                      <feGaussianBlur stdDeviation="8" />
-                    </filter>
+                    <filter id="patternGlow" x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="8" /></filter>
+                    <marker id="pressArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10Z" fill="#ffe06f" /></marker>
                   </defs>
 
                   <rect width="1000" height="650" fill="url(#patternGrass)" />
@@ -161,6 +161,18 @@ export default function PatternLibrary() {
                     <rect x="908" y="245" width="62" height="160" />
                   </g>
 
+                  <line
+                    x1={presser.x + 18}
+                    y1={presser.y}
+                    x2={ballCarrier.x - 24}
+                    y2={ballCarrier.y}
+                    stroke="#ffe06f"
+                    strokeWidth="3"
+                    strokeDasharray="9 7"
+                    markerEnd="url(#pressArrow)"
+                    opacity=".9"
+                  />
+
                   {scene.red.map((player) => (
                     <g key={`red-${player.id}`} className="patternPlayer" transform={`translate(${player.x} ${player.y})`}>
                       <circle r="16" fill="#ff6272" stroke="#fff" strokeWidth="2.6" opacity={player.id === scene.ballRed ? 1 : .56} />
@@ -169,12 +181,12 @@ export default function PatternLibrary() {
                   ))}
 
                   {scene.blue.map((player) => {
-                    const active = player.id === scene.activeBlue;
+                    const pressing = player.id === scene.pressBlue;
                     return (
                       <g key={`blue-${player.id}`} className="patternPlayer" transform={`translate(${player.x} ${player.y})`}>
-                        {active && <circle r="31" fill="#ffd65a" opacity=".18" filter="url(#patternGlow)" />}
-                        {active && <circle r="26" fill="none" stroke="#ffe06f" strokeWidth="4" />}
-                        <circle r="16" fill="#3b82f6" stroke="#fff" strokeWidth="2.6" opacity={active ? 1 : .62} />
+                        {pressing && <circle r="31" fill="#ffd65a" opacity=".18" filter="url(#patternGlow)" />}
+                        {pressing && <circle r="26" fill="none" stroke="#ffe06f" strokeWidth="4" />}
+                        <circle r="16" fill="#3b82f6" stroke="#fff" strokeWidth="2.6" opacity={pressing ? 1 : .74} />
                         <text y="5" textAnchor="middle" fontSize="11" fontWeight="900" fill="#fff">{player.id}</text>
                       </g>
                     );
@@ -188,9 +200,7 @@ export default function PatternLibrary() {
 
                 <div className="patternTransport">
                   <button type="button" onClick={() => step(-1)} aria-label="Forrige scene">◀</button>
-                  <button className="patternPlay" type="button" onClick={() => setPlaying((value) => !value)}>
-                    {playing ? "❚❚ Pause" : "▶ Spill mønster"}
-                  </button>
+                  <button className="patternPlay" type="button" onClick={() => setPlaying((value) => !value)}>{playing ? "❚❚ Pause" : "▶ Spill mønster"}</button>
                   <button type="button" onClick={() => step(1)} aria-label="Neste scene">▶</button>
                   <span className="patternPhase">{sceneIndex + 1}/{scenes.length} · {scene.label}</span>
                   <select value={speed} onChange={(event) => setSpeed(Number(event.target.value))} aria-label="Mønsterfart">
@@ -204,7 +214,7 @@ export default function PatternLibrary() {
               <aside className="patternCoachPanel">
                 <div className="patternNote">
                   <b>Scene {sceneIndex + 1}</b>
-                  <p><strong>Ball:</strong> rød {scene.ballRed}<br /><strong>Aktiv:</strong> blå {scene.activeBlue}</p>
+                  <p><strong>Ball:</strong> rød {scene.ballRed}<br /><strong>Presser:</strong> blå {scene.pressBlue}</p>
                 </div>
 
                 {scenes.map((item, index) => (
@@ -227,8 +237,8 @@ export default function PatternLibrary() {
                 ))}
 
                 <div className="patternNote">
-                  <b>Fast sekvens</b>
-                  <p>Rød 1 → blå 6<br />Rød 2 → blå 3<br />Rød 3 → blå 4<br />Rød 4 → blå 5</p>
+                  <b>Pressrekkefølge</b>
+                  <p>Rød 1 → blå 4<br />Rød 2 → blå 1<br />Rød 3 → blå 2<br />Rød 4 → blå 3</p>
                 </div>
               </aside>
             </div>

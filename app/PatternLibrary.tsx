@@ -7,6 +7,9 @@ type PlayerPoint = Point & { id: number };
 type PatternScene = {
   label: string;
   pressBlue: number;
+  coverBlue: number[];
+  balanceBlue: number[];
+  farWingBlue?: number;
   ballRed: number;
   blue: PlayerPoint[];
   red: PlayerPoint[];
@@ -20,11 +23,14 @@ const redBase: PlayerPoint[] = [
 ];
 
 // Fire faste, manuelt definerte scener basert på referansebildene.
-// Viktig: gul markering viser PRESseren, ikke spilleren som var valgt i editoren på referansebildet.
+// Roller er også manuelt definert per scene: press, sikring, balanse og motsatt kant.
 const scenes: PatternScene[] = [
   {
     label: "Rød 1 → Blå 4 presser",
     pressBlue: 4,
+    coverBlue: [1],
+    balanceBlue: [2, 3],
+    farWingBlue: 6,
     ballRed: 1,
     red: redBase,
     blue: [
@@ -39,6 +45,9 @@ const scenes: PatternScene[] = [
   {
     label: "Rød 2 → Blå 1 presser",
     pressBlue: 1,
+    coverBlue: [4, 2],
+    balanceBlue: [3],
+    farWingBlue: 6,
     ballRed: 2,
     red: redBase,
     blue: [
@@ -53,6 +62,9 @@ const scenes: PatternScene[] = [
   {
     label: "Rød 3 → Blå 2 presser",
     pressBlue: 2,
+    coverBlue: [1, 3],
+    balanceBlue: [4],
+    farWingBlue: 5,
     ballRed: 3,
     red: redBase,
     blue: [
@@ -67,6 +79,9 @@ const scenes: PatternScene[] = [
   {
     label: "Rød 4 → Blå 3 presser",
     pressBlue: 3,
+    coverBlue: [2],
+    balanceBlue: [1, 4],
+    farWingBlue: 5,
     ballRed: 4,
     red: redBase,
     blue: [
@@ -128,14 +143,14 @@ export default function PatternLibrary() {
               <div>
                 <span className="patternEyebrow">FERDIG MØNSTER · 4 FASTE SCENER</span>
                 <h2>Forsvarsmønster – Frode 1</h2>
-                <p>Ballfører flyttes fra rød 1 til 4. Den nærmeste blå forsvarsspilleren støter ut, mens resten forskyver etter de manuelt definerte posisjonene fra referansebildene.</p>
+                <p>Gul viser press. Grønn viser sikring. Cyan viser balanse. Lilla viser motsatt kant som faller inn når laget forskyver.</p>
               </div>
               <button className="patternClose" type="button" onClick={() => setOpen(false)} aria-label="Lukk">×</button>
             </header>
 
             <div className="patternContent">
               <div className="patternPitchCard">
-                <svg className="patternPitch" viewBox="0 0 1000 650" aria-label="Forsvarsmønster med fire faste scener">
+                <svg className="patternPitch" viewBox="0 0 1000 650" aria-label="Forsvarsmønster med press, sikring og balanse">
                   <defs>
                     <linearGradient id="patternGrass" x1="0" y1="0" x2="1" y2="1">
                       <stop offset="0%" stopColor="#17683d" />
@@ -182,12 +197,19 @@ export default function PatternLibrary() {
 
                   {scene.blue.map((player) => {
                     const pressing = player.id === scene.pressBlue;
+                    const covering = scene.coverBlue.includes(player.id);
+                    const balancing = scene.balanceBlue.includes(player.id);
+                    const farWing = scene.farWingBlue === player.id;
+                    const ringColor = pressing ? "#ffe06f" : covering ? "#9effb7" : balancing ? "#8bd7ff" : farWing ? "#c6b9ff" : null;
+                    const label = pressing ? "PRESS" : covering ? "SIKRING" : balancing ? "BALANSE" : farWing ? "FALLER INN" : "";
+
                     return (
                       <g key={`blue-${player.id}`} className="patternPlayer" transform={`translate(${player.x} ${player.y})`}>
                         {pressing && <circle r="31" fill="#ffd65a" opacity=".18" filter="url(#patternGlow)" />}
-                        {pressing && <circle r="26" fill="none" stroke="#ffe06f" strokeWidth="4" />}
-                        <circle r="16" fill="#3b82f6" stroke="#fff" strokeWidth="2.6" opacity={pressing ? 1 : .74} />
+                        {ringColor && <circle r={pressing ? 26 : 24} fill="none" stroke={ringColor} strokeWidth={pressing ? 4 : 3} opacity=".95" />}
+                        <circle r="16" fill="#3b82f6" stroke="#fff" strokeWidth="2.6" opacity={ringColor ? 1 : .68} />
                         <text y="5" textAnchor="middle" fontSize="11" fontWeight="900" fill="#fff">{player.id}</text>
+                        {label && <text y="-32" textAnchor="middle" fontSize="11" fontWeight="900" fill={ringColor ?? "#fff"} stroke="rgba(0,0,0,.68)" strokeWidth="3" paintOrder="stroke">{label}</text>}
                       </g>
                     );
                   })}
@@ -214,7 +236,30 @@ export default function PatternLibrary() {
               <aside className="patternCoachPanel">
                 <div className="patternNote">
                   <b>Scene {sceneIndex + 1}</b>
-                  <p><strong>Ball:</strong> rød {scene.ballRed}<br /><strong>Presser:</strong> blå {scene.pressBlue}</p>
+                  <p>
+                    <strong>Ball:</strong> rød {scene.ballRed}<br />
+                    <strong>Press:</strong> blå {scene.pressBlue}<br />
+                    <strong>Sikring:</strong> blå {scene.coverBlue.join(" + ")}<br />
+                    <strong>Balanse:</strong> blå {scene.balanceBlue.join(" + ")}
+                    {scene.farWingBlue ? <><br /><strong>Motsatt kant:</strong> blå {scene.farWingBlue} faller inn</> : null}
+                  </p>
+                </div>
+
+                <div className="patternPrinciple">
+                  <span className="principleNumber">1</span>
+                  <div><b>PRESS</b><p>Gul spiller støter ut mot ballfører.</p></div>
+                </div>
+                <div className="patternPrinciple">
+                  <span className="principleNumber">2</span>
+                  <div><b>SIKRING</b><p>Grønne spillere dekker rommet bak og på innsiden av presset.</p></div>
+                </div>
+                <div className="patternPrinciple">
+                  <span className="principleNumber">3</span>
+                  <div><b>BALANSE</b><p>Cyan spillere forskyver og sørger for at laget fortsatt henger sammen.</p></div>
+                </div>
+                <div className="patternPrinciple">
+                  <span className="principleNumber">4</span>
+                  <div><b>MOTSATT KANT</b><p>Lilla markering viser kanten på motsatt side som faller inn når laget forskyver.</p></div>
                 </div>
 
                 {scenes.map((item, index) => (
@@ -235,11 +280,6 @@ export default function PatternLibrary() {
                     </div>
                   </button>
                 ))}
-
-                <div className="patternNote">
-                  <b>Pressrekkefølge</b>
-                  <p>Rød 1 → blå 4<br />Rød 2 → blå 1<br />Rød 3 → blå 2<br />Rød 4 → blå 3</p>
-                </div>
               </aside>
             </div>
           </section>

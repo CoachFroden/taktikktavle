@@ -1023,14 +1023,11 @@ export default function Home() {
   useEffect(() => {
     if (pendingSequenceDirection === null) return;
     const direction = pendingSequenceDirection;
+    const forcedHead = direction === 1 ? 0 : sceneDuration;
     setPendingSequenceDirection(null);
-    const timer = window.setTimeout(() => {
-      const forcedHead = direction === 1 ? 0 : sceneDuration;
-      setPlayhead(forcedHead);
-      animationStartHeadRef.current = forcedHead;
-      startPlayback(direction, true, forcedHead);
-    }, 70);
-    return () => window.clearTimeout(timer);
+    setPlayhead(forcedHead);
+    animationStartHeadRef.current = forcedHead;
+    startPlayback(direction, true, forcedHead);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sceneIndex, pendingSequenceDirection]);
 

@@ -1,0 +1,88 @@
+* { box-sizing: border-box; }
+
+:root {
+  color-scheme: dark;
+  --bg: #07110d;
+  --panel: #0d1a14;
+  --panel-2: #12241b;
+  --border: rgba(255,255,255,.10);
+  --text: #f4f7f5;
+  --muted: #9fb0a7;
+  --accent: #7ee081;
+  --accent-strong: #55c85a;
+  --danger: #ff6b6b;
+}
+
+html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); }
+body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+button, input, select { font: inherit; }
+button { color: inherit; }
+
+.appShell { min-height: 100vh; padding: 20px; background: radial-gradient(circle at top, #113022 0%, var(--bg) 42%); }
+.topBar { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; }
+.brandBlock h1 { margin: 0; font-size: clamp(1.35rem, 2vw, 2rem); }
+.brandBlock p { margin: 4px 0 0; color: var(--muted); font-size: .92rem; }
+.topActions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.boardLayout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 16px; align-items: start; }
+.panel { background: rgba(13,26,20,.92); border: 1px solid var(--border); border-radius: 18px; }
+.sidebar { padding: 14px; position: sticky; top: 16px; }
+.sidebarSection + .sidebarSection { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.sidebarTitle { font-weight: 800; font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+.toolGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.toolButton, .actionButton, .smallButton { border: 1px solid var(--border); background: #13261d; border-radius: 12px; cursor: pointer; transition: .16s ease; }
+.toolButton { min-height: 48px; padding: 8px 10px; text-align: left; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+.toolButton strong { font-size: .88rem; }
+.toolButton span { font-size: .72rem; color: var(--muted); }
+.toolButton.active { background: #1f432e; border-color: rgba(126,224,129,.6); box-shadow: inset 0 0 0 1px rgba(126,224,129,.2); }
+.toolButton:hover, .actionButton:hover, .smallButton:hover { border-color: rgba(126,224,129,.45); transform: translateY(-1px); }
+.actionButton { padding: 10px 13px; font-weight: 700; }
+.actionButton.primary { background: var(--accent); color: #07110d; border-color: transparent; }
+.actionButton.danger { color: #ffd2d2; background: rgba(255,107,107,.12); }
+.smallButton { padding: 8px 10px; font-size: .86rem; }
+
+.fieldPanel { padding: 14px; min-width: 0; }
+.controlsRow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.controlGroup { display: flex; align-items: center; gap: 7px; }
+.controlLabel { color: var(--muted); font-size: .82rem; font-weight: 700; }
+.select, .textInput { border: 1px solid var(--border); background: #102019; color: var(--text); border-radius: 10px; min-height: 40px; padding: 8px 10px; outline: none; }
+.textInput { width: 100%; }
+.select:focus, .textInput:focus { border-color: rgba(126,224,129,.65); box-shadow: 0 0 0 3px rgba(126,224,129,.10); }
+.statusLine { margin-left: auto; color: var(--muted); font-size: .82rem; }
+
+.pitchWrap { border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,.15); background: #1d6e39; touch-action: none; }
+.pitchSvg { width: 100%; height: auto; display: block; aspect-ratio: 1000 / 650; user-select: none; }
+
+.playbackBar { margin-top: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.playbackBar .spacer { flex: 1; }
+.progressTrack { height: 8px; min-width: 120px; flex: 1 1 180px; max-width: 340px; background: #183225; border-radius: 999px; overflow: hidden; }
+.progressFill { height: 100%; background: var(--accent); border-radius: inherit; transition: width .04s linear; }
+
+.inspector { display: grid; gap: 8px; }
+.inspectorRow { display: grid; grid-template-columns: 78px 1fr; gap: 8px; align-items: center; }
+.inspectorRow label { color: var(--muted); font-size: .8rem; }
+.helpText { color: var(--muted); font-size: .78rem; line-height: 1.45; margin: 0; }
+
+.legendDot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+.blueDot { background: #2f7af8; }
+.redDot { background: #ef5350; }
+
+@media (max-width: 900px) {
+  .appShell { padding: 10px; }
+  .boardLayout { grid-template-columns: 1fr; }
+  .sidebar { position: static; }
+  .toolGrid { grid-template-columns: repeat(4, minmax(0,1fr)); }
+  .toolButton { min-height: 58px; text-align: center; align-items: center; }
+  .statusLine { width: 100%; margin-left: 0; }
+}
+
+@media (max-width: 560px) {
+  .toolGrid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .topActions { width: 100%; }
+  .topActions .actionButton { flex: 1; }
+  .fieldPanel { padding: 8px; }
+  .controlsRow { gap: 7px; }
+  .controlGroup { flex: 1 1 140px; }
+  .select { width: 100%; }
+  .playbackBar .actionButton { flex: 1; }
+}

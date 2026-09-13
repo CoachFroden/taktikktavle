@@ -1,0 +1,298 @@
+/* Touchscreen layer ------------------------------------------------------- */
+
+.touchMode .pitchWrap {
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+
+.touchMode .pitchSvg {
+  will-change: transform;
+}
+
+.touchMode .pitchWrap.touchGesturing .pitchSvg {
+  cursor: grabbing !important;
+}
+
+.touchMode button,
+.touchMode select,
+.touchMode .darkInput,
+.touchMode input[type="text"] {
+  min-height: 48px;
+}
+
+.touchMode .studioTool {
+  min-height: 62px;
+  padding: 9px 8px;
+}
+
+.touchMode .studioTool .toolIcon {
+  font-size: 1.25rem;
+}
+
+.touchMode .miniButton,
+.touchMode .iconButton,
+.touchMode .resetButton,
+.touchMode .playButton {
+  min-width: 50px;
+  min-height: 50px;
+}
+
+.touchMode .playButton {
+  width: 58px;
+  height: 58px;
+  font-size: 1.25rem;
+}
+
+.touchMode .resetButton {
+  width: 52px;
+  height: 52px;
+}
+
+.touchMode .scrubber {
+  min-height: 34px;
+}
+
+.touchMode input[type="range"] {
+  min-height: 34px;
+}
+
+.touchMode input[type="range"]::-webkit-slider-thumb {
+  width: 24px;
+  height: 24px;
+}
+
+.touchMode .sceneCard {
+  min-height: 82px;
+}
+
+.touchMode .quickActions button,
+.touchMode .objectContextMenu button,
+.touchMode .secondaryButton,
+.touchMode .ghostButton,
+.touchMode .primaryButton {
+  min-height: 50px;
+}
+
+.touchMode .objectContextMenu {
+  min-width: 220px;
+  padding: 7px;
+}
+
+.touchMode .objectContextMenu button {
+  font-size: 1rem;
+  padding: 11px 13px;
+}
+
+.touchMode .touchHitArea {
+  pointer-events: all;
+}
+
+.touchControlDock,
+.touchModeLauncher {
+  position: fixed;
+  z-index: 120;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  border: 1px solid rgba(255,255,255,.13);
+  background: rgba(8,18,14,.92);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 14px 40px rgba(0,0,0,.3);
+}
+
+.touchModeLauncher {
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  color: #eef7f1;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+.touchControlDock {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 17px;
+}
+
+.touchControlDock button {
+  min-width: 74px;
+  min-height: 54px;
+  border: 0;
+  border-radius: 12px;
+  padding: 6px 9px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: rgba(255,255,255,.055);
+  color: #dfe9e3;
+  cursor: pointer;
+}
+
+.touchControlDock button span {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.touchControlDock button b {
+  font-size: .68rem;
+  white-space: nowrap;
+}
+
+.touchControlDock button.active {
+  color: #07110d;
+  background: #78df8a;
+}
+
+.touchControlDock button:disabled {
+  opacity: .38;
+  cursor: default;
+}
+
+/* Large interactive-board mode. The pitch stays central, while the tools
+   collapse into a compact touch ribbon instead of disappearing completely. */
+.touchBoardMode .topHeader,
+.touchBoardMode .workspaceToolbar,
+.touchBoardMode .scenePanel,
+.touchBoardMode .timelinePanel,
+.touchBoardMode .inspectorPanel,
+.touchBoardMode .formationSection {
+  display: none !important;
+}
+
+.touchBoardMode .studioShell {
+  padding: 8px !important;
+}
+
+.touchBoardMode .studioGrid {
+  display: block !important;
+}
+
+.touchBoardMode .workspaceColumn {
+  width: 100%;
+}
+
+.touchBoardMode .pitchCard {
+  min-height: calc(100vh - 16px);
+  display: flex;
+  flex-direction: column;
+  padding: 8px !important;
+}
+
+.touchBoardMode .pitchWrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.touchBoardMode .pitchSvg {
+  max-height: calc(100vh - 105px);
+}
+
+.touchBoardMode .playbackDock {
+  flex: 0 0 auto;
+  padding-right: 220px;
+}
+
+.touchBoardMode .toolDock {
+  position: fixed !important;
+  z-index: 85;
+  left: max(12px, env(safe-area-inset-left));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  width: min(760px, calc(100vw - 235px));
+  max-height: none !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  padding: 7px !important;
+  border-radius: 17px;
+  background: rgba(8,18,14,.9) !important;
+  backdrop-filter: blur(16px);
+}
+
+.touchBoardMode .toolDock .toolSection {
+  flex: 0 0 auto;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+
+.touchBoardMode .toolDock .sectionLabel {
+  display: none;
+}
+
+.touchBoardMode .toolDock .toolButtons {
+  display: flex;
+  gap: 5px;
+}
+
+.touchBoardMode .toolDock .studioTool {
+  width: 62px;
+  min-width: 62px;
+  min-height: 56px;
+  padding: 5px;
+  font-size: .68rem;
+}
+
+.touchBoardMode .toolDock .toolIcon {
+  font-size: 1rem;
+}
+
+@media (any-pointer: coarse) {
+  .touchModeLauncher {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .touchControlDock {
+    right: 8px;
+    bottom: 8px;
+  }
+
+  .touchControlDock button {
+    min-width: 65px;
+    min-height: 50px;
+    padding-inline: 6px;
+  }
+
+  .touchControlDock button b {
+    font-size: .62rem;
+  }
+
+  .touchBoardMode .toolDock {
+    left: 8px;
+    right: 8px;
+    bottom: 74px;
+    width: auto;
+  }
+
+  .touchBoardMode .playbackDock {
+    padding-right: 0;
+    padding-bottom: 65px;
+  }
+
+  .touchBoardMode .pitchCard {
+    min-height: calc(100vh - 8px);
+  }
+}
+
+@media (max-width: 520px) {
+  .touchControlDock button:nth-child(3) b {
+    display: none;
+  }
+
+  .touchControlDock button:nth-child(3) {
+    min-width: 50px;
+  }
+
+  .touchMode .toolButtons {
+    gap: 7px;
+  }
+}

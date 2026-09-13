@@ -3,17 +3,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type Point = { x: number; y: number };
-type Player = Point & { id: string; role: string; line: "gk" | "back" | "mid" | "front" };
-type Phase = { label: string; ball: Point };
-
-const phases: Phase[] = [
-  { label: "Ball venstre", ball: { x: 790, y: 105 } },
-  { label: "Inn i venstre halvrom", ball: { x: 785, y: 225 } },
-  { label: "Ball sentralt", ball: { x: 790, y: 325 } },
-  { label: "Inn i høyre halvrom", ball: { x: 785, y: 425 } },
-  { label: "Ball høyre", ball: { x: 790, y: 545 } },
-  { label: "Tilbake sentralt", ball: { x: 790, y: 325 } },
-];
+type Line = "gk" | "back" | "mid" | "front";
+type Duty = "press" | "cover" | "balance" | "shift";
+type Player = Point & { id: string; role: string; line: Line };
+type Opponent = Point & { id: string; role: string };
+type Phase = {
+  label: string;
+  carrierId: string;
+  pressId: string;
+  coverIds: string[];
+  balanceId: string;
+  side: -1 | 1;
+};
 
 const basePlayers: Player[] = [
   { id: "gk", role: "K", line: "gk", x: 92, y: 325 },
@@ -21,91 +22,74 @@ const basePlayers: Player[] = [
   { id: "lcb", role: "VS", line: "back", x: 225, y: 255 },
   { id: "rcb", role: "HS", line: "back", x: 225, y: 395 },
   { id: "rb", role: "HB", line: "back", x: 235, y: 538 },
-  { id: "l8", role: "8", line: "mid", x: 405, y: 175 },
+  { id: "l8", role: "V8", line: "mid", x: 405, y: 175 },
   { id: "6", role: "6", line: "mid", x: 385, y: 325 },
-  { id: "r8", role: "8", line: "mid", x: 405, y: 475 },
+  { id: "r8", role: "H8", line: "mid", x: 405, y: 475 },
   { id: "lw", role: "VK", line: "front", x: 565, y: 125 },
   { id: "9", role: "9", line: "front", x: 585, y: 325 },
   { id: "rw", role: "HK", line: "front", x: 565, y: 525 },
 ];
 
-const opponents: Point[] = [
-  { x: 800, y: 105 },
-  { x: 800, y: 225 },
-  { x: 800, y: 325 },
-  { x: 800, y: 425 },
-  { x: 800, y: 545 },
+const opponents: Opponent[] = [
+  { id: "rrb", role: "R-HB", x: 785, y: 105 },
+  { id: "rrcb", role: "R-HS", x: 810, y: 245 },
+  { id: "rlcb", role: "R-VS", x: 810, y: 405 },
+  { id: "rlb", role: "R-VB", x: 785, y: 545 },
+];
+
+const phases: Phase[] = [
+  { label: "Ball hos rød høyreback", carrierId: "rrb", pressId: "lw", coverIds: ["l8", "6"], balanceId: "rw", side: -1 },
+  { label: "Ball hos rød høyre stopper", carrierId: "rrcb", pressId: "9", coverIds: ["l8", "6"], balanceId: "rw", side: -1 },
+  { label: "Ball hos rød venstre stopper", carrierId: "rlcb", pressId: "9", coverIds: ["r8", "6"], balanceId: "lw", side: 1 },
+  { label: "Ball hos rød venstreback", carrierId: "rlb", pressId: "rw", coverIds: ["r8", "6"], balanceId: "lw", side: 1 },
+  { label: "Tilbake til rød venstre stopper", carrierId: "rlcb", pressId: "9", coverIds: ["r8", "6"], balanceId: "lw", side: 1 },
+  { label: "Over til rød høyre stopper", carrierId: "rrcb", pressId: "9", coverIds: ["l8", "6"], balanceId: "rw", side: -1 },
 ];
 
 const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 
-function getShape(ball: Point) {
-  const sideOffset = ball.y - 325;
-  const shiftByLine = { gk: 0.08, back: 0.28, mid: 0.40, front: 0.50 } as const;
-  const shifted = basePlayers.map((player) => ({
-    ...player,
-    y: clamp(player.y + sideOffset * shiftByLine[player.line], 75, 575),
-  }));
+function getOpponent(id: string) {
+  return opponents.find((opponent) => opponent.id === id) ?? opponents[0];
+}
 
-  const outfield = shifted.filter((p) => p.line !== "gk");
-  const pressCandidates = outfield.filter((p) => p.line === "front" || p.line === "mid");
-  const presser = pressCandidates.reduce((best, player) => {
-    const d = Math.hypot(ball.x - player.x, ball.y - player.y);
-    const bestD = Math.hypot(ball.x - best.x, ball.y - best.y);
-    return d < bestD ? player : best;
-  }, pressCandidates[0]);
+function getDefensiveShape(phase: Phase) {
+  const carrier = getOpponent(phase.carrierId);
+  const sideShift = phase.side * 62;
+  const lineFactor: Record<Line, number> = { gk: 0.08, back: 0.42, mid: 0.62, front: 0.78 };
 
-  const pressY = clamp(ball.y + (325 - ball.y) * 0.08, 70, 580);
-  const result = shifted.map((player) => {
+  const players = basePlayers.map((player) => {
     let x = player.x;
-    let y = player.y;
-    let duty: "press" | "cover" | "balance" | "shift" = "shift";
+    let y = clamp(player.y + sideShift * lineFactor[player.line], 70, 580);
+    let duty: Duty = "shift";
 
-    if (player.id === presser.id) {
-      x = 685;
-      y = pressY;
+    if (player.id === phase.pressId) {
+      x = carrier.x - 100;
+      y = carrier.y + (325 - carrier.y) * 0.06;
       duty = "press";
+    } else if (phase.coverIds.includes(player.id)) {
+      const coverIndex = phase.coverIds.indexOf(player.id);
+      x = carrier.x - (195 + coverIndex * 70);
+      y = carrier.y + (325 - carrier.y) * (0.32 + coverIndex * 0.16);
+      duty = "cover";
+    } else if (player.id === phase.balanceId) {
+      x = 500;
+      y = phase.side === -1 ? 430 : 220;
+      duty = "balance";
     } else if (player.line === "front") {
-      const isOppositeWing = (ball.y < 250 && player.id === "rw") || (ball.y > 400 && player.id === "lw");
-      if (isOppositeWing) {
-        x -= 58;
-        y += (325 - y) * 0.30;
-        duty = "balance";
-      } else {
-        x -= 10;
-        y += (ball.y - y) * 0.10;
-        duty = "cover";
-      }
+      x -= 18;
+      y += (325 - y) * 0.08;
     } else if (player.line === "mid") {
-      const near = Math.abs(player.y - ball.y) < 125;
-      if (near) {
-        x += 45;
-        y += (ball.y - y) * 0.14;
-        duty = "cover";
-      } else if (player.id === "6") {
-        x += 22;
-        duty = "cover";
-      }
-    } else if (player.line === "back") {
-      const nearSide = Math.abs(player.y - ball.y) < 135;
-      if (nearSide) x += 22;
-      const farSide = (ball.y < 250 && player.id === "rb") || (ball.y > 400 && player.id === "lb");
-      if (farSide) {
-        x -= 8;
-        y += (325 - y) * 0.18;
-        duty = "balance";
-      }
+      x += 18;
     }
 
     return { ...player, x, y, duty };
   });
 
-  const cover = result
-    .filter((p) => p.id !== presser.id && (p.line === "front" || p.line === "mid"))
-    .sort((a, b) => Math.hypot(a.x - presser.x, a.y - presser.y) - Math.hypot(b.x - presser.x, b.y - presser.y))[0];
-  if (cover) cover.duty = "cover";
+  return { players, carrier };
+}
 
-  return { players: result, presserId: presser.id };
+function roleName(id: string) {
+  return basePlayers.find((player) => player.id === id)?.role ?? id;
 }
 
 export default function PatternLibrary() {
@@ -115,13 +99,14 @@ export default function PatternLibrary() {
   const [speed, setSpeed] = useState(1);
   const timerRef = useRef<number | null>(null);
 
-  const shape = useMemo(() => getShape(phases[phase].ball), [phase]);
+  const current = phases[phase];
+  const shape = useMemo(() => getDefensiveShape(current), [current]);
 
   useEffect(() => {
     if (!playing || !open) return;
     timerRef.current = window.setInterval(() => {
-      setPhase((current) => (current + 1) % phases.length);
-    }, 1700 / speed);
+      setPhase((value) => (value + 1) % phases.length);
+    }, 1850 / speed);
     return () => {
       if (timerRef.current !== null) window.clearInterval(timerRef.current);
     };
@@ -133,12 +118,12 @@ export default function PatternLibrary() {
 
   function next(delta: number) {
     setPlaying(false);
-    setPhase((current) => (current + delta + phases.length) % phases.length);
+    setPhase((value) => (value + delta + phases.length) % phases.length);
   }
 
   return (
     <>
-      <button className="patternLauncher" type="button" onClick={() => setOpen(true)} title="Ferdige bevegelsesmønstre">
+      <button className="patternLauncher" type="button" onClick={() => setOpen(true)} title="Ferdige forsvarsmønstre">
         <span>◈</span><b>Mønstre</b>
       </button>
 
@@ -147,16 +132,16 @@ export default function PatternLibrary() {
           <section className="patternModal">
             <header className="patternHeader">
               <div>
-                <span className="patternEyebrow">MØNSTERBIBLIOTEK</span>
-                <h2>4-3-3 · Press, sikring og balanse</h2>
-                <p>Ballflytting side–side utløser kollektiv forskyvning. Nærmeste spiller presser, resten sikrer og balanserer.</p>
+                <span className="patternEyebrow">FORSVARSMØNSTER</span>
+                <h2>4-3-3 · Hvem presser, hvem sikrer?</h2>
+                <p>Rødt lag har ballen. Blått lag forsvarer målet til venstre og reagerer på hver pasning med press, sikring, kollektiv forskyvning og balanse på motsatt side.</p>
               </div>
               <button className="patternClose" type="button" onClick={() => setOpen(false)} aria-label="Lukk">×</button>
             </header>
 
             <div className="patternContent">
               <div className="patternPitchCard">
-                <svg className="patternPitch" viewBox="0 0 1000 650" aria-label="Animert 4-3-3 defensiv forskyvning">
+                <svg className="patternPitch" viewBox="0 0 1000 650" aria-label="Defensiv 4-3-3-forskyvning mot rødt lag i ballbesittelse">
                   <defs>
                     <linearGradient id="patternGrass" x1="0" y1="0" x2="1" y2="1">
                       <stop offset="0%" stopColor="#17683d" />
@@ -165,6 +150,7 @@ export default function PatternLibrary() {
                     </linearGradient>
                     <filter id="patternGlow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="7" /></filter>
                   </defs>
+
                   <rect width="1000" height="650" fill="url(#patternGrass)" />
                   {Array.from({ length: 10 }).map((_, i) => <rect key={i} x={i * 100} width="100" height="650" fill={i % 2 ? "rgba(0,0,0,.025)" : "rgba(255,255,255,.025)"} />)}
                   <g fill="none" stroke="rgba(255,255,255,.88)" strokeWidth="3.5">
@@ -177,14 +163,24 @@ export default function PatternLibrary() {
                     <rect x="908" y="245" width="62" height="160" />
                   </g>
 
-                  <g opacity=".52">
-                    {opponents.map((opponent, index) => (
-                      <g key={index} transform={`translate(${opponent.x} ${opponent.y})`}>
-                        <circle r="15" fill="#ff5c6c" stroke="#fff" strokeWidth="2.5" />
-                        <text y="4.5" textAnchor="middle" fontSize="10" fontWeight="900" fill="#fff">{index + 2}</text>
-                      </g>
-                    ))}
+                  <g>
+                    <rect x="48" y="48" width="145" height="34" rx="10" fill="rgba(58,139,255,.16)" stroke="rgba(170,210,255,.45)" />
+                    <text x="120" y="70" textAnchor="middle" fill="#dcecff" fontSize="13" fontWeight="900">BLÅ FORSVARER</text>
+                    <rect x="755" y="48" width="195" height="34" rx="10" fill="rgba(255,92,108,.14)" stroke="rgba(255,160,170,.42)" />
+                    <text x="852" y="70" textAnchor="middle" fill="#ffd9de" fontSize="13" fontWeight="900">RØD HAR BALLEN</text>
                   </g>
+
+                  {opponents.map((opponent) => {
+                    const carrier = opponent.id === current.carrierId;
+                    return (
+                      <g key={opponent.id} transform={`translate(${opponent.x} ${opponent.y})`} opacity={carrier ? 1 : .64}>
+                        {carrier && <circle r="29" fill="rgba(255,214,90,.14)" stroke="#ffd65a" strokeWidth="3" />}
+                        <circle r="16" fill="#ff5c6c" stroke="#fff" strokeWidth="2.6" />
+                        <text y="4.5" textAnchor="middle" fontSize="8.5" fontWeight="900" fill="#fff">{opponent.role.replace("R-", "")}</text>
+                        {carrier && <text y="-37" textAnchor="middle" className="patternDuty pressDuty">BALLFØRER</text>}
+                      </g>
+                    );
+                  })}
 
                   {shape.players.map((player) => {
                     const isPress = player.duty === "press";
@@ -192,41 +188,56 @@ export default function PatternLibrary() {
                     const isBalance = player.duty === "balance";
                     return (
                       <g key={player.id} className="patternPlayer" transform={`translate(${player.x} ${player.y})`}>
-                        {(isPress || isCover || isBalance) && <circle r={isPress ? 29 : 25} fill="none" stroke={isPress ? "#ffd65a" : isBalance ? "#8bd7ff" : "#9effb7"} strokeWidth={isPress ? 4 : 2.5} opacity={isPress ? 1 : .7} />}
-                        {isPress && <circle r="34" fill="#ffd65a" opacity=".18" filter="url(#patternGlow)" />}
-                        {player.line === "gk" ? <rect x="-15" y="-15" width="30" height="30" rx="7" fill="#3a8bff" stroke="#fff" strokeWidth="2.5" /> : <circle r="15" fill="#3a8bff" stroke="#fff" strokeWidth="2.5" />}
+                        {(isPress || isCover || isBalance) && (
+                          <circle
+                            r={isPress ? 29 : 25}
+                            fill="none"
+                            stroke={isPress ? "#ffd65a" : isBalance ? "#8bd7ff" : "#9effb7"}
+                            strokeWidth={isPress ? 4 : 2.7}
+                            opacity={isPress ? 1 : .88}
+                          />
+                        )}
+                        {isPress && <circle r="35" fill="#ffd65a" opacity=".18" filter="url(#patternGlow)" />}
+                        {player.line === "gk" ? (
+                          <rect x="-15" y="-15" width="30" height="30" rx="7" fill="#3a8bff" stroke="#fff" strokeWidth="2.5" />
+                        ) : (
+                          <circle r="15" fill="#3a8bff" stroke="#fff" strokeWidth="2.5" />
+                        )}
                         <text y="4.5" textAnchor="middle" fontSize="9.5" fontWeight="900" fill="#fff">{player.role}</text>
-                        {isPress && <text y="-37" textAnchor="middle" className="patternDuty pressDuty">PRESS</text>}
-                        {isBalance && <text y="-32" textAnchor="middle" className="patternDuty balanceDuty">BALANSE</text>}
-                        {isCover && player.line !== "back" && <text y="-32" textAnchor="middle" className="patternDuty coverDuty">SIKRING</text>}
+                        {isPress && <text y="-37" textAnchor="middle" className="patternDuty pressDuty">1F · PRESS</text>}
+                        {isCover && <text y="-32" textAnchor="middle" className="patternDuty coverDuty">2F · SIKRING</text>}
+                        {isBalance && <text y="-32" textAnchor="middle" className="patternDuty balanceDuty">3F · BALANSE</text>}
                       </g>
                     );
                   })}
 
-                  <g className="patternBall" transform={`translate(${phases[phase].ball.x} ${phases[phase].ball.y})`}>
-                    <circle r="11" fill="#fff" stroke="#111" strokeWidth="2.5" />
-                    <circle r="3.5" fill="#111" />
-                    <circle r="19" fill="none" stroke="#ffd65a" strokeWidth="2" opacity=".7" />
+                  <g className="patternBall" transform={`translate(${shape.carrier.x} ${shape.carrier.y})`}>
+                    <circle r="10" fill="#fff" stroke="#111" strokeWidth="2.4" />
+                    <circle r="3.2" fill="#111" />
                   </g>
                 </svg>
 
                 <div className="patternTransport">
                   <button type="button" onClick={() => next(-1)}>◀</button>
-                  <button className="patternPlay" type="button" onClick={() => setPlaying((v) => !v)}>{playing ? "❚❚ Pause" : "▶ Spill mønster"}</button>
+                  <button className="patternPlay" type="button" onClick={() => setPlaying((value) => !value)}>{playing ? "❚❚ Pause" : "▶ Spill forsvarsmønster"}</button>
                   <button type="button" onClick={() => next(1)}>▶</button>
-                  <span className="patternPhase">{phase + 1}/{phases.length} · {phases[phase].label}</span>
-                  <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))} aria-label="Mønsterfart">
+                  <span className="patternPhase">{phase + 1}/{phases.length} · {current.label}</span>
+                  <select value={speed} onChange={(event) => setSpeed(Number(event.target.value))} aria-label="Mønsterfart">
                     <option value={0.6}>Rolig</option><option value={1}>Normal</option><option value={1.4}>Rask</option>
                   </select>
                 </div>
               </div>
 
               <aside className="patternCoachPanel">
-                <div className="patternPrinciple"><span className="principleNumber">1</span><div><b>Nærmeste går i press</b><p>Spilleren nærmest ballfører bryter ut av leddet og styrer presset.</p></div></div>
-                <div className="patternPrinciple"><span className="principleNumber">2</span><div><b>Sikring bak og på innsiden</b><p>Nærmeste medspillere forskyver bak presseren slik at laget ikke åpner rom sentralt.</p></div></div>
-                <div className="patternPrinciple"><span className="principleNumber">3</span><div><b>Hele laget forskyver</b><p>Midtbane og backfirer flyttes mot ballsiden og holder avstandene kompakte.</p></div></div>
-                <div className="patternPrinciple"><span className="principleNumber">4</span><div><b>Motsatt kant balanserer</b><p>Fjern kant faller litt lavere og smalere i stedet for å bli stående høyt og bredt.</p></div></div>
-                <div className="patternNote"><b>Trenerpoeng</b><p>Dette illustrerer prinsippene, ikke faste meter. Avstander og hvem som presser må alltid tilpasses ballposisjon, motstander og presshøyde.</p></div>
+                <div className="patternNote">
+                  <b>Akkurat nå</b>
+                  <p><strong>Press:</strong> {roleName(current.pressId)} · <strong>Sikring:</strong> {current.coverIds.map(roleName).join(" + ")} · <strong>Balanse:</strong> {roleName(current.balanceId)}</p>
+                </div>
+                <div className="patternPrinciple"><span className="principleNumber">1</span><div><b>1. forsvarer går i press</b><p>Spilleren som har kortest og mest naturlig vei til ballfører bryter ut og setter press.</p></div></div>
+                <div className="patternPrinciple"><span className="principleNumber">2</span><div><b>2. forsvarer sikrer</b><p>Nærmeste spiller bak og på innsiden dekker rommet bak presseren. Sekseren beskytter samtidig sentralt.</p></div></div>
+                <div className="patternPrinciple"><span className="principleNumber">3</span><div><b>Resten forskyver samlet</b><p>Midtbane og backfirer flytter mot ballsiden slik at avstandene mellom spillerne og leddene ikke blir store.</p></div></div>
+                <div className="patternPrinciple"><span className="principleNumber">4</span><div><b>Motsatt kant gir balanse</b><p>Kanten lengst fra ballen faller litt ned og inn. Han skal ikke bli stående høyt og bredt når resten av laget forskyver.</p></div></div>
+                <div className="patternNote"><b>Poenget med øvelsen</b><p>Rødt lag flytter bare ballen. Det vi trener på er reaksjonen hos laget uten ball: PRESS → SIKRING → BALANSE, om og om igjen.</p></div>
               </aside>
             </div>
           </section>

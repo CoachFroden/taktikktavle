@@ -52,6 +52,7 @@ button { color: inherit; }
 
 .pitchWrap { border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,.15); background: #1d6e39; touch-action: none; }
 .pitchSvg { width: 100%; height: auto; display: block; aspect-ratio: 1000 / 650; user-select: none; }
+.pitchSvg g[data-board-object="true"] > * { transform: scale(.78); transform-origin: 0 0; }
 
 .playbackBar { margin-top: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .playbackBar .spacer { flex: 1; }

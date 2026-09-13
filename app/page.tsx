@@ -256,7 +256,7 @@ export default function Home() {
 
   const sceneDuration = useMemo(() => {
     const ends = objects.filter(hasMotion).map((object) => (object.motionStart ?? 0) + (object.motionDuration ?? 2));
-    return Math.max(4, ...ends, 0);
+    return ends.length > 0 ? Math.max(...ends) : 4;
   }, [objects]);
 
   const animatedObjects = useMemo(() => objects.filter(hasMotion), [objects]);

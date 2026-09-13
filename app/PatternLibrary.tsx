@@ -22,8 +22,9 @@ const redBase: PlayerPoint[] = [
   { id: 4, x: 425, y: 565 },
 ];
 
-// Fire faste, manuelt definerte scener basert på referansebildene.
-// Roller er også manuelt definert per scene: press, sikring, balanse og motsatt kant.
+// Fire faste scener. Avstandene er bevisst kompakte:
+// presser -> sikring -> balanse ligger tett nok til at laget henger sammen,
+// og motsatt kant faller mot eget mål og inn i banen.
 const scenes: PatternScene[] = [
   {
     label: "Rød 1 → Blå 4 presser",
@@ -34,12 +35,12 @@ const scenes: PatternScene[] = [
     ballRed: 1,
     red: redBase,
     blue: [
-      { id: 1, x: 210, y: 260 },
-      { id: 2, x: 210, y: 390 },
-      { id: 3, x: 260, y: 485 },
+      { id: 1, x: 300, y: 150 },
+      { id: 2, x: 270, y: 215 },
+      { id: 3, x: 245, y: 285 },
       { id: 4, x: 350, y: 95 },
       { id: 5, x: 495, y: 50 },
-      { id: 6, x: 430, y: 575 },
+      { id: 6, x: 300, y: 500 },
     ],
   },
   {
@@ -52,11 +53,11 @@ const scenes: PatternScene[] = [
     red: redBase,
     blue: [
       { id: 1, x: 350, y: 245 },
-      { id: 2, x: 270, y: 335 },
-      { id: 3, x: 285, y: 445 },
-      { id: 4, x: 275, y: 155 },
+      { id: 2, x: 300, y: 300 },
+      { id: 3, x: 270, y: 365 },
+      { id: 4, x: 305, y: 190 },
       { id: 5, x: 470, y: 65 },
-      { id: 6, x: 440, y: 570 },
+      { id: 6, x: 295, y: 485 },
     ],
   },
   {
@@ -68,11 +69,11 @@ const scenes: PatternScene[] = [
     ballRed: 3,
     red: redBase,
     blue: [
-      { id: 1, x: 285, y: 295 },
+      { id: 1, x: 305, y: 350 },
       { id: 2, x: 350, y: 410 },
-      { id: 3, x: 300, y: 480 },
-      { id: 4, x: 275, y: 180 },
-      { id: 5, x: 445, y: 70 },
+      { id: 3, x: 305, y: 470 },
+      { id: 4, x: 270, y: 290 },
+      { id: 5, x: 295, y: 165 },
       { id: 6, x: 470, y: 580 },
     ],
   },
@@ -85,11 +86,11 @@ const scenes: PatternScene[] = [
     ballRed: 4,
     red: redBase,
     blue: [
-      { id: 1, x: 250, y: 365 },
-      { id: 2, x: 280, y: 445 },
+      { id: 1, x: 280, y: 410 },
+      { id: 2, x: 315, y: 480 },
       { id: 3, x: 365, y: 545 },
-      { id: 4, x: 245, y: 280 },
-      { id: 5, x: 430, y: 100 },
+      { id: 4, x: 255, y: 335 },
+      { id: 5, x: 300, y: 180 },
       { id: 6, x: 500, y: 600 },
     ],
   },
@@ -143,7 +144,7 @@ export default function PatternLibrary() {
               <div>
                 <span className="patternEyebrow">FERDIG MØNSTER · 4 FASTE SCENER</span>
                 <h2>Forsvarsmønster – Frode 1</h2>
-                <p>Gul viser press. Grønn viser sikring. Cyan viser balanse. Lilla viser motsatt kant som faller inn når laget forskyver.</p>
+                <p>Gul viser press. Grønn viser sikring. Cyan viser balanse. Lilla viser motsatt kant som faller ned mot eget mål og inn når laget forskyver.</p>
               </div>
               <button className="patternClose" type="button" onClick={() => setOpen(false)} aria-label="Lukk">×</button>
             </header>
@@ -201,7 +202,7 @@ export default function PatternLibrary() {
                     const balancing = scene.balanceBlue.includes(player.id);
                     const farWing = scene.farWingBlue === player.id;
                     const ringColor = pressing ? "#ffe06f" : covering ? "#9effb7" : balancing ? "#8bd7ff" : farWing ? "#c6b9ff" : null;
-                    const label = pressing ? "PRESS" : covering ? "SIKRING" : balancing ? "BALANSE" : farWing ? "FALLER INN" : "";
+                    const label = pressing ? "PRESS" : covering ? "SIKRING" : balancing ? "BALANSE" : farWing ? "FALLER NED" : "";
 
                     return (
                       <g key={`blue-${player.id}`} className="patternPlayer" transform={`translate(${player.x} ${player.y})`}>
@@ -241,7 +242,7 @@ export default function PatternLibrary() {
                     <strong>Press:</strong> blå {scene.pressBlue}<br />
                     <strong>Sikring:</strong> blå {scene.coverBlue.join(" + ")}<br />
                     <strong>Balanse:</strong> blå {scene.balanceBlue.join(" + ")}
-                    {scene.farWingBlue ? <><br /><strong>Motsatt kant:</strong> blå {scene.farWingBlue} faller inn</> : null}
+                    {scene.farWingBlue ? <><br /><strong>Motsatt kant:</strong> blå {scene.farWingBlue} faller ned og inn</> : null}
                   </p>
                 </div>
 
@@ -251,15 +252,15 @@ export default function PatternLibrary() {
                 </div>
                 <div className="patternPrinciple">
                   <span className="principleNumber">2</span>
-                  <div><b>SIKRING</b><p>Grønne spillere dekker rommet bak og på innsiden av presset.</p></div>
+                  <div><b>SIKRING</b><p>Grønn spiller ligger tett nok bak og på innsiden til å kunne overta dersom presseren blir passert.</p></div>
                 </div>
                 <div className="patternPrinciple">
                   <span className="principleNumber">3</span>
-                  <div><b>BALANSE</b><p>Cyan spillere forskyver og sørger for at laget fortsatt henger sammen.</p></div>
+                  <div><b>BALANSE</b><p>Cyan spillere forskyver tett inn slik at avstanden i laget holdes liten.</p></div>
                 </div>
                 <div className="patternPrinciple">
                   <span className="principleNumber">4</span>
-                  <div><b>MOTSATT KANT</b><p>Lilla markering viser kanten på motsatt side som faller inn når laget forskyver.</p></div>
+                  <div><b>MOTSATT KANT</b><p>Lilla spiller faller mot eget mål og inn i banen når laget forskyver.</p></div>
                 </div>
 
                 {scenes.map((item, index) => (

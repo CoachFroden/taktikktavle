@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import TouchEnhancer from "./TouchEnhancer";
 import "./globals.css";
+import "./touch.css";
 
 export const metadata: Metadata = {
   title: "Taktikktavle",
@@ -9,7 +11,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="no">
-      <body>{children}</body>
+      <body>
+        {children}
+        <TouchEnhancer />
+      </body>
     </html>
   );
 }

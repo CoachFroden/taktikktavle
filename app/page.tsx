@@ -16,7 +16,8 @@ type Tool =
   | "cone"
   | "arrow"
   | "run"
-  | "movement";
+  | "movement"
+  | "freeMovement";
 type PitchType = "11er" | "9er" | "7er" | "5er";
 
 type BoardObject = {
@@ -29,6 +30,7 @@ type BoardObject = {
   number?: string;
   name?: string;
   target?: Point;
+  motionPath?: Point[];
 };
 
 type BoardLine = {
@@ -44,6 +46,12 @@ type DrawingLine = {
   current: Point;
 };
 
+type FreehandDrawing = {
+  objectId: string;
+  pointerId: number;
+  points: Point[];
+};
+
 const pitchConfig: Record<PitchType, { penaltyDepth: number; penaltyHeight: number; goalDepth: number; goalHeight: number; centerRadius: number }> = {
   "11er": { penaltyDepth: 155, penaltyHeight: 300, goalDepth: 62, goalHeight: 160, centerRadius: 88 },
   "9er": { penaltyDepth: 145, penaltyHeight: 285, goalDepth: 58, goalHeight: 150, centerRadius: 80 },
@@ -53,10 +61,12 @@ const pitchConfig: Record<PitchType, { penaltyDepth: number; penaltyHeight: numb
 
 const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+const pointDistance = (a: Point, b: Point) => Math.hypot(b.x - a.x, b.y - a.y);
 
 const tools: Array<{ id: Tool; title: string; hint: string }> = [
   { id: "select", title: "↖ Velg", hint: "Flytt og rediger" },
-  { id: "movement", title: "◎ Bevegelse", hint: "Sett A → B" },
+  { id: "movement", title: "◎ Rett bevegelse", hint: "Sett A → B" },
+  { id: "freeMovement", title: "〰 Fri bevegelse", hint: "Tegn bevegelsen" },
   { id: "blue", title: "● Blå spiller", hint: "Legg på banen" },
   { id: "red", title: "● Rød spiller", hint: "Legg på banen" },
   { id: "keeperBlue", title: "▣ Blå keeper", hint: "Legg på banen" },
@@ -67,10 +77,49 @@ const tools: Array<{ id: Tool; title: string; hint: string }> = [
   { id: "run", title: "⋯ Løp", hint: "Stiplet linje" },
 ];
 
+function pointAlongPath(path: Point[], progress: number): Point {
+  if (path.length === 0) return { x: 0, y: 0 };
+  if (path.length === 1 || progress <= 0) return path[0];
+  if (progress >= 1) return path[path.length - 1];
+
+  const lengths: number[] = [];
+  let total = 0;
+  for (let i = 1; i < path.length; i += 1) {
+    const length = pointDistance(path[i - 1], path[i]);
+    lengths.push(length);
+    total += length;
+  }
+  if (total === 0) return path[path.length - 1];
+
+  const wanted = total * progress;
+  let travelled = 0;
+  for (let i = 0; i < lengths.length; i += 1) {
+    const nextTravelled = travelled + lengths[i];
+    if (wanted <= nextTravelled) {
+      const local = lengths[i] === 0 ? 0 : (wanted - travelled) / lengths[i];
+      const start = path[i];
+      const end = path[i + 1];
+      return {
+        x: start.x + (end.x - start.x) * local,
+        y: start.y + (end.y - start.y) * local,
+      };
+    }
+    travelled = nextTravelled;
+  }
+  return path[path.length - 1];
+}
+
+function pathLength(path: Point[]) {
+  let total = 0;
+  for (let i = 1; i < path.length; i += 1) total += pointDistance(path[i - 1], path[i]);
+  return total;
+}
+
 export default function Home() {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const animationRef = useRef<number | null>(null);
   const animationStartRef = useRef(0);
+  const freehandRef = useRef<FreehandDrawing | null>(null);
 
   const [title, setTitle] = useState("Ny taktikk");
   const [pitch, setPitch] = useState<PitchType>("11er");
@@ -80,6 +129,7 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragging, setDragging] = useState<{ id: string; pointerId: number } | null>(null);
   const [drawing, setDrawing] = useState<DrawingLine | null>(null);
+  const [freehandPreview, setFreehandPreview] = useState<Point[]>([]);
   const [progress, setProgress] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
@@ -109,12 +159,20 @@ export default function Home() {
     if (reset) setProgress(0);
   }
 
+  function cancelFreehand() {
+    freehandRef.current = null;
+    setFreehandPreview([]);
+  }
+
   function chooseTool(nextTool: Tool) {
     stopAnimation(true);
+    cancelFreehand();
     setTool(nextTool);
     setDrawing(null);
     if (nextTool === "movement") {
       setStatus(selectedId ? "Trykk på banen der det valgte objektet skal ende." : "Velg først en spiller eller ball, og trykk deretter på sluttpunktet.");
+    } else if (nextTool === "freeMovement") {
+      setStatus(selectedId ? "Trykk på det valgte objektet og tegn bevegelsen med mus eller finger." : "Velg først en spiller eller ball. Trykk deretter «Fri bevegelse» og tegn fra objektet.");
     } else if (nextTool === "select") {
       setStatus("Dra objekter for å flytte dem. Trykk et objekt for å redigere det.");
     } else if (nextTool === "arrow" || nextTool === "run") {
@@ -168,9 +226,14 @@ export default function Home() {
         setStatus("Velg først objektet som skal bevege seg.");
         return;
       }
-      setObjects((current) => current.map((object) => object.id === selectedId ? { ...object, target: point } : object));
+      setObjects((current) => current.map((object) => object.id === selectedId ? { ...object, target: point, motionPath: undefined } : object));
       setProgress(0);
       setStatus("Sluttpunkt satt. Du kan velge et nytt objekt og gi det en bevegelse også.");
+      return;
+    }
+
+    if (tool === "freeMovement") {
+      setStatus(selectedId ? "Start frihåndstegningen ved å trykke og dra på det valgte objektet." : "Velg først objektet som skal bevege seg.");
       return;
     }
 
@@ -190,13 +253,45 @@ export default function Home() {
       setObjects((current) => current.map((object) => object.id === dragging.id ? { ...object, x: point.x, y: point.y } : object));
     }
     if (drawing) setDrawing({ ...drawing, current: point });
+
+    const freehand = freehandRef.current;
+    if (freehand && tool === "freeMovement") {
+      const last = freehand.points[freehand.points.length - 1];
+      if (pointDistance(last, point) >= 5) {
+        freehand.points.push(point);
+        setFreehandPreview([...freehand.points]);
+      }
+    }
+  }
+
+  function finishFreehand(event: ReactPointerEvent<SVGSVGElement>) {
+    const freehand = freehandRef.current;
+    if (!freehand) return;
+
+    const point = boardPoint(event);
+    const last = freehand.points[freehand.points.length - 1];
+    if (pointDistance(last, point) >= 3) freehand.points.push(point);
+
+    const finalPath = [...freehand.points];
+    freehandRef.current = null;
+    setFreehandPreview([]);
+
+    if (finalPath.length >= 2 && pathLength(finalPath) > 12) {
+      setObjects((current) => current.map((object) => object.id === freehand.objectId ? { ...object, target: undefined, motionPath: finalPath } : object));
+      setProgress(0);
+      setStatus("Fri bevegelse lagret. Trykk Play for å se objektet følge kurven.");
+    } else {
+      setStatus("Bevegelsen ble for kort. Tegn en litt lengre bane.");
+    }
   }
 
   function handleBoardPointerUp(event: ReactPointerEvent<SVGSVGElement>) {
     if (dragging) setDragging(null);
+    if (freehandRef.current) finishFreehand(event);
+
     if (drawing) {
       const end = boardPoint(event);
-      const distance = Math.hypot(end.x - drawing.start.x, end.y - drawing.start.y);
+      const distance = pointDistance(drawing.start, end);
       if (distance > 10) {
         setLines((current) => [...current, { id: makeId(), type: drawing.type, start: drawing.start, end }]);
         setStatus("Linje lagt til.");
@@ -217,10 +312,19 @@ export default function Home() {
       setStatus("Flytter objekt. Slipp når det står riktig.");
     } else if (tool === "movement") {
       setStatus("Objekt valgt. Trykk på banen der det skal ende.");
+    } else if (tool === "freeMovement") {
+      const start = { x: object.x, y: object.y };
+      const freehand: FreehandDrawing = { objectId: object.id, pointerId: event.pointerId, points: [start] };
+      freehandRef.current = freehand;
+      setFreehandPreview([start]);
+      setObjects((current) => current.map((currentObject) => currentObject.id === object.id ? { ...currentObject, target: undefined, motionPath: undefined } : currentObject));
+      event.currentTarget.setPointerCapture(event.pointerId);
+      setStatus("Tegn bevegelsen mens du holder inne. Slipp når løpsbanen er ferdig.");
     }
   }
 
   function displayPoint(object: BoardObject): Point {
+    if (object.motionPath && object.motionPath.length > 1) return pointAlongPath(object.motionPath, progress);
     if (!object.target) return { x: object.x, y: object.y };
     return {
       x: object.x + (object.target.x - object.x) * progress,
@@ -229,15 +333,15 @@ export default function Home() {
   }
 
   function togglePlayback() {
-    const hasMovement = objects.some((object) => object.target);
+    const hasMovement = objects.some((object) => object.target || (object.motionPath && object.motionPath.length > 1));
     if (!hasMovement) {
-      setStatus("Ingen bevegelser er lagt inn ennå. Bruk verktøyet «Bevegelse».");
+      setStatus("Ingen bevegelser er lagt inn ennå. Bruk «Rett bevegelse» eller «Fri bevegelse».");
       return;
     }
 
     if (isPlaying) {
       stopAnimation(false);
-      setStatus("Animasion satt på pause.");
+      setStatus("Animasjon satt på pause.");
       return;
     }
 
@@ -270,7 +374,11 @@ export default function Home() {
 
   function commitEndPositions() {
     stopAnimation(true);
-    setObjects((current) => current.map((object) => object.target ? { ...object, x: object.target.x, y: object.target.y, target: undefined } : object));
+    setObjects((current) => current.map((object) => {
+      const pathEnd = object.motionPath && object.motionPath.length > 1 ? object.motionPath[object.motionPath.length - 1] : null;
+      const end = pathEnd ?? object.target;
+      return end ? { ...object, x: end.x, y: end.y, target: undefined, motionPath: undefined } : object;
+    }));
     setStatus("Sluttposisjonene er nå gjort til nye startposisjoner.");
   }
 
@@ -289,13 +397,14 @@ export default function Home() {
   function clearMovement() {
     if (!selectedId) return;
     setProgress(0);
-    updateSelected({ target: undefined });
+    updateSelected({ target: undefined, motionPath: undefined });
     setStatus("Bevegelsen til valgt objekt er fjernet.");
   }
 
   function clearBoard() {
     if (!window.confirm("Vil du tømme hele taktikktavlen?")) return;
     stopAnimation(true);
+    cancelFreehand();
     setObjects([]);
     setLines([]);
     setSelectedId(null);
@@ -325,6 +434,7 @@ export default function Home() {
       if (Array.isArray(parsed.lines)) setLines(parsed.lines);
       setSelectedId(null);
       stopAnimation(true);
+      cancelFreehand();
       setStatus("Lagret tavle åpnet.");
     } catch {
       setStatus("Den lagrede tavlen kunne ikke leses.");
@@ -360,6 +470,8 @@ export default function Home() {
       </>
     );
   }
+
+  const hasAnyMovement = objects.some((object) => object.target || (object.motionPath && object.motionPath.length > 1));
 
   return (
     <main className="appShell">
@@ -410,7 +522,9 @@ export default function Home() {
                     </div>
                   </>
                 )}
-                {selectedObject.target && <button type="button" className="smallButton" onClick={clearMovement}>Fjern bevegelse</button>}
+                {(selectedObject.target || (selectedObject.motionPath && selectedObject.motionPath.length > 1)) && (
+                  <button type="button" className="smallButton" onClick={clearMovement}>Fjern bevegelse</button>
+                )}
                 <button type="button" className="actionButton danger" onClick={deleteSelected}>Slett objekt</button>
               </div>
             ) : (
@@ -421,7 +535,9 @@ export default function Home() {
           <section className="sidebarSection">
             <div className="sidebarTitle">Tegning</div>
             <button type="button" className="smallButton" disabled={lines.length === 0} onClick={() => setLines((current) => current.slice(0, -1))}>Angre siste strek</button>
-            <p className="helpText" style={{ marginTop: 10 }}>Pil = pasning/retning. Stiplet linje = løp. Bevegelse gir et objekt et animert sluttpunkt.</p>
+            <p className="helpText" style={{ marginTop: 10 }}>
+              Pil = pasning/retning. Stiplet linje = løp. Rett bevegelse går A → B. Fri bevegelse lar deg tegne selve banen spilleren eller ballen skal følge.
+            </p>
           </section>
         </aside>
 
@@ -453,7 +569,7 @@ export default function Home() {
               onPointerDown={handleBoardPointerDown}
               onPointerMove={handleBoardPointerMove}
               onPointerUp={handleBoardPointerUp}
-              onPointerCancel={() => { setDragging(null); setDrawing(null); }}
+              onPointerCancel={() => { setDragging(null); setDrawing(null); cancelFreehand(); }}
             >
               <defs>
                 <marker id="arrowHead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -501,12 +617,42 @@ export default function Home() {
                 </g>
               ))}
 
+              {objects.map((object) => object.motionPath && object.motionPath.length > 1 && (
+                <g key={`path-${object.id}`} opacity={object.id === selectedId ? ".86" : ".56"}>
+                  <polyline
+                    points={object.motionPath.map((point) => `${point.x},${point.y}`).join(" ")}
+                    fill="none"
+                    stroke={object.id === selectedId ? "#ffe082" : "#f8f8f8"}
+                    strokeWidth="4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeDasharray="9 9"
+                  />
+                  <circle cx={object.motionPath[object.motionPath.length - 1].x} cy={object.motionPath[object.motionPath.length - 1].y} r="10" fill="none" stroke="#fff" strokeWidth="3" />
+                </g>
+              ))}
+
+              {freehandPreview.length > 1 && (
+                <polyline
+                  points={freehandPreview.map((point) => `${point.x},${point.y}`).join(" ")}
+                  fill="none"
+                  stroke="#ffe082"
+                  strokeWidth="6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeDasharray="10 8"
+                  opacity=".95"
+                />
+              )}
+
               {objects.map((object) => {
                 const point = displayPoint(object);
                 const selected = object.id === selectedId;
+                const cursor = tool === "select" ? "grab" : tool === "freeMovement" ? "crosshair" : "pointer";
+
                 if (object.type === "ball") {
                   return (
-                    <g key={object.id} data-board-object="true" transform={`translate(${point.x} ${point.y})`} onPointerDown={(event) => handleObjectPointerDown(event, object)} style={{ cursor: tool === "select" ? "grab" : "pointer" }}>
+                    <g key={object.id} data-board-object="true" transform={`translate(${point.x} ${point.y})`} onPointerDown={(event) => handleObjectPointerDown(event, object)} style={{ cursor }}>
                       {selected && <circle r="24" fill="none" stroke="#ffe082" strokeWidth="4" />}
                       <circle r="14" fill="#fff" stroke="#171717" strokeWidth="3" />
                       <path d="M0,-5 5,-1 3,5 -3,5 -5,-1Z" fill="#171717" />
@@ -516,7 +662,7 @@ export default function Home() {
 
                 if (object.type === "cone") {
                   return (
-                    <g key={object.id} data-board-object="true" transform={`translate(${point.x} ${point.y})`} onPointerDown={(event) => handleObjectPointerDown(event, object)} style={{ cursor: tool === "select" ? "grab" : "pointer" }}>
+                    <g key={object.id} data-board-object="true" transform={`translate(${point.x} ${point.y})`} onPointerDown={(event) => handleObjectPointerDown(event, object)} style={{ cursor }}>
                       {selected && <circle r="25" fill="none" stroke="#ffe082" strokeWidth="4" />}
                       <path d="M0,-18 L17,15 L-17,15 Z" fill="#ff9f1c" stroke="#fff" strokeWidth="2" />
                       <rect x="-21" y="14" width="42" height="7" rx="3" fill="#ff9f1c" />
@@ -526,7 +672,7 @@ export default function Home() {
 
                 const fill = object.team === "blue" ? "#2f7af8" : "#ef5350";
                 return (
-                  <g key={object.id} data-board-object="true" transform={`translate(${point.x} ${point.y})`} onPointerDown={(event) => handleObjectPointerDown(event, object)} style={{ cursor: tool === "select" ? "grab" : "pointer" }}>
+                  <g key={object.id} data-board-object="true" transform={`translate(${point.x} ${point.y})`} onPointerDown={(event) => handleObjectPointerDown(event, object)} style={{ cursor }}>
                     {selected && <circle r="31" fill="none" stroke="#ffe082" strokeWidth="4" />}
                     {object.role === "keeper" ? (
                       <rect x="-22" y="-22" width="44" height="44" rx="10" fill={fill} stroke="#fff" strokeWidth="4" />
@@ -555,7 +701,7 @@ export default function Home() {
             </div>
             <div className="progressTrack" aria-label="Avspillingsfremdrift"><div className="progressFill" style={{ width: `${progress * 100}%` }} /></div>
             <div className="spacer" />
-            <button type="button" className="smallButton" onClick={commitEndPositions} disabled={!objects.some((object) => object.target)}>Bruk sluttposisjoner som start</button>
+            <button type="button" className="smallButton" onClick={commitEndPositions} disabled={!hasAnyMovement}>Bruk sluttposisjoner som start</button>
           </div>
         </section>
       </div>

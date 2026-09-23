@@ -3,13 +3,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   CSSProperties,
+  ReactNode,
   ContextMenuEvent as ReactContextMenuEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
 
 type Point = { x: number; y: number };
 type Team = "blue" | "red";
-type ObjectType = "player" | "ball" | "cone";
+type ObjectType =
+  | "player"
+  | "ball"
+  | "cone"
+  | "mannequin"
+  | "miniGoal"
+  | "ladder"
+  | "hurdle"
+  | "gate"
+  | "zone"
+  | "circleShape"
+  | "semicircle";
 type PitchType = "11er" | "9er" | "7er" | "5er";
 type PitchView = "full" | "half" | "third" | "box";
 type Tool =
@@ -21,6 +33,14 @@ type Tool =
   | "keeperRed"
   | "ball"
   | "cone"
+  | "mannequin"
+  | "miniGoal"
+  | "ladder"
+  | "hurdle"
+  | "gate"
+  | "zone"
+  | "circleShape"
+  | "semicircle"
   | "arrow"
   | "run"
   | "rotation"
@@ -37,6 +57,8 @@ type BoardObject = {
   role?: "player" | "keeper";
   number?: string;
   name?: string;
+  scale?: number;
+  rotation?: number;
   target?: Point;
   motionPath?: Point[];
   motionStart?: number;
@@ -140,6 +162,19 @@ const toolGroups: Array<{
     ],
   },
   {
+    title: "Figurer",
+    items: [
+      { id: "mannequin", icon: "♟", label: "Dukke", hint: "Forsvarsdukke / mannequin" },
+      { id: "miniGoal", icon: "⌑", label: "Minimål", hint: "Lite treningsmål" },
+      { id: "ladder", icon: "╫", label: "Stige", hint: "Koordinasjonsstige" },
+      { id: "hurdle", icon: "Π", label: "Hekk", hint: "Treningshekk" },
+      { id: "gate", icon: "∥", label: "Port", hint: "Port mellom to markører" },
+      { id: "zone", icon: "▭", label: "Sone", hint: "Markert rektangel / område" },
+      { id: "circleShape", icon: "○", label: "Sirkel", hint: "Markert sirkel / område" },
+      { id: "semicircle", icon: "◒", label: "Halvsirkel", hint: "Halvsirkel / bue" },
+    ],
+  },
+  {
     title: "Animer",
     items: [
       { id: "movement", icon: "◎", label: "Rett", hint: "A → B" },
@@ -214,10 +249,28 @@ function hasMotion(object: BoardObject) {
   return Boolean(object.target || (object.motionPath && object.motionPath.length > 1));
 }
 
+const figureLabels: Partial<Record<ObjectType, string>> = {
+  mannequin: "Forsvarsdukke",
+  miniGoal: "Minimål",
+  ladder: "Stige",
+  hurdle: "Hekk",
+  gate: "Port",
+  zone: "Sone",
+  circleShape: "Sirkel",
+  semicircle: "Halvsirkel",
+};
+
+function isFigureObject(object: BoardObject) {
+  return Boolean(figureLabels[object.type]);
+}
+
 function motionLabel(object: BoardObject) {
   if (object.type === "ball") return "Ball";
   if (object.type === "cone") return "Kjegle";
-  return object.name || (object.role === "keeper" ? `${object.team === "blue" ? "Blå" : "Rød"} keeper` : `${object.team === "blue" ? "Blå" : "Rød"} ${object.number || "spiller"}`);
+  if (figureLabels[object.type]) return figureLabels[object.type] as string;
+  if (object.name) return object.name;
+  if (object.role === "keeper") return (object.team === "blue" ? "Blå" : "Rød") + " keeper";
+  return (object.team === "blue" ? "Blå" : "Rød") + " " + (object.number || "spiller");
 }
 
 function sanitizeFileName(value: string) {
@@ -409,6 +462,14 @@ export default function Home() {
       next = { id: makeId(), type: "ball", ...point };
     } else if (tool === "cone") {
       next = { id: makeId(), type: "cone", ...point };
+    } else if (["mannequin", "miniGoal", "ladder", "hurdle", "gate", "zone", "circleShape", "semicircle"].includes(tool)) {
+      next = {
+        id: makeId(),
+        type: tool as ObjectType,
+        scale: 1,
+        rotation: 0,
+        ...point,
+      };
     }
 
     if (!next) return;
@@ -431,7 +492,7 @@ export default function Home() {
       return;
     }
 
-    if (["blue", "red", "keeperBlue", "keeperRed", "ball", "cone"].includes(tool)) {
+    if (["blue", "red", "keeperBlue", "keeperRed", "ball", "cone", "mannequin", "miniGoal", "ladder", "hurdle", "gate", "zone", "circleShape", "semicircle"].includes(tool)) {
       addObject(point);
       return;
     }
@@ -603,7 +664,7 @@ export default function Home() {
     }
 
     if (tool === "freeMovement") {
-      if (object.type === "cone") {
+      if (object.type !== "player" && object.type !== "ball") {
         setStatus("Fri bevegelse er laget for spillere og ball.");
         return;
       }
@@ -1309,35 +1370,101 @@ export default function Home() {
 
                   if (object.type === "ball") {
                     return (
-                      <g key={object.id} data-board-object="true" transform={`translate(${point.x} ${point.y})`} opacity={dimmed ? .58 : 1} onPointerDown={(event) => handleObjectPointerDown(event, object)} onContextMenu={(event) => handleObjectContextMenu(event, object)} style={{ cursor }}>
-                        {selected && <circle r="18" fill="rgba(247,221,114,.11)" stroke="#f7dd72" strokeWidth="2.8" filter="url(#softGlow)" />}
-                        <circle r="10" fill="#fff" stroke="#111" strokeWidth="2.2" />
-                        <path d="M0,-4 4,-1 2.5,4 -2.5,4 -4,-1Z" fill="#151515" />
+                      <g key={object.id} data-board-object="true" transform={\`translate(\${point.x} \${point.y})\`} opacity={dimmed ? .58 : 1} onPointerDown={(event) => handleObjectPointerDown(event, object)} onContextMenu={(event) => handleObjectContextMenu(event, object)} style={{ cursor }}>
+                        <circle className="touchTarget" r="20" fill="transparent" />
+                        {selected && <circle r="14" fill="rgba(247,221,114,.11)" stroke="#f7dd72" strokeWidth="2.4" filter="url(#softGlow)" />}
+                        <circle r="7" fill="#fff" stroke="#111" strokeWidth="1.8" />
+                        <path d="M0,-3 3,-1 2,3 -2,3 -3,-1Z" fill="#151515" />
                       </g>
                     );
                   }
 
                   if (object.type === "cone") {
                     return (
-                      <g key={object.id} data-board-object="true" transform={`translate(${point.x} ${point.y})`} opacity={dimmed ? .58 : 1} onPointerDown={(event) => handleObjectPointerDown(event, object)} onContextMenu={(event) => handleObjectContextMenu(event, object)} style={{ cursor }}>
-                        {selected && <circle r="19" fill="none" stroke="#f7dd72" strokeWidth="2.8" />}
-                        <path d="M0,-13 L12,11 L-12,11Z" fill="#ff9f43" stroke="#fff" strokeWidth="1.7" />
-                        <rect x="-15" y="10" width="30" height="5" rx="2.5" fill="#ff9f43" />
+                      <g key={object.id} data-board-object="true" transform={\`translate(\${point.x} \${point.y})\`} opacity={dimmed ? .58 : 1} onPointerDown={(event) => handleObjectPointerDown(event, object)} onContextMenu={(event) => handleObjectContextMenu(event, object)} style={{ cursor }}>
+                        <circle className="touchTarget" r="21" fill="transparent" />
+                        {selected && <circle r="15" fill="none" stroke="#f7dd72" strokeWidth="2.4" />}
+                        <path d="M0,-10 L9,8 L-9,8Z" fill="#ff9f43" stroke="#fff" strokeWidth="1.4" />
+                        <rect x="-11" y="7" width="22" height="4" rx="2" fill="#ff9f43" />
+                      </g>
+                    );
+                  }
+
+                  if (isFigureObject(object)) {
+                    const figureScale = object.scale ?? 1;
+                    const figureRotation = object.rotation ?? 0;
+                    const figureTransform = \`translate(\${point.x} \${point.y}) rotate(\${figureRotation}) scale(\${figureScale})\`;
+                    let figure: ReactNode = null;
+
+                    if (object.type === "mannequin") {
+                      figure = (
+                        <g className="trainingFigure mannequinFigure">
+                          <circle cx="0" cy="-23" r="6" fill="#f0b84b" stroke="#fff" strokeWidth="1.7" />
+                          <path d="M-11,-14 Q0,-20 11,-14 L8,6 L4,20 L-4,20 L-8,6Z" fill="#f0b84b" stroke="#fff" strokeWidth="1.8" />
+                          <line x1="0" y1="20" x2="0" y2="31" stroke="#d79525" strokeWidth="3" />
+                          <line x1="-13" y1="31" x2="13" y2="31" stroke="#d79525" strokeWidth="4" strokeLinecap="round" />
+                        </g>
+                      );
+                    } else if (object.type === "miniGoal") {
+                      figure = (
+                        <g className="trainingFigure miniGoalFigure" fill="none" stroke="#f6f8f7" strokeWidth="2.5" strokeLinejoin="round">
+                          <path d="M-30,17 L-30,-15 L24,-15 L24,17Z" />
+                          <path d="M24,-15 L32,-8 L32,20 L24,17 M-30,-15 L-22,-8 L32,-8" opacity=".75" />
+                          <path d="M-22,-8 V20 H32 M-10,-8 V20 M2,-8 V20 M14,-8 V20 M26,-8 V20 M-22,1 H32 M-22,10 H32" opacity=".42" strokeWidth="1.1" />
+                        </g>
+                      );
+                    } else if (object.type === "ladder") {
+                      figure = (
+                        <g className="trainingFigure ladderFigure" fill="none" stroke="#f7dd72" strokeWidth="2.7" strokeLinecap="round">
+                          <line x1="-12" y1="-30" x2="-12" y2="30" />
+                          <line x1="12" y1="-30" x2="12" y2="30" />
+                          {[-24, -12, 0, 12, 24].map((y) => <line key={y} x1="-12" y1={y} x2="12" y2={y} />)}
+                        </g>
+                      );
+                    } else if (object.type === "hurdle") {
+                      figure = (
+                        <g className="trainingFigure hurdleFigure" fill="none" stroke="#ff9f43" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M-20,20 V-8 H20 V20" />
+                          <line x1="-25" y1="20" x2="-14" y2="20" />
+                          <line x1="14" y1="20" x2="25" y2="20" />
+                        </g>
+                      );
+                    } else if (object.type === "gate") {
+                      figure = (
+                        <g className="trainingFigure gateFigure">
+                          <path d="M-22,-12 L-14,11 L-30,11Z M22,-12 L30,11 L14,11Z" fill="#ff9f43" stroke="#fff" strokeWidth="1.4" />
+                          <line x1="-13" y1="0" x2="13" y2="0" stroke="#70f0a6" strokeWidth="2.2" strokeDasharray="5 5" opacity=".9" />
+                        </g>
+                      );
+                    } else if (object.type === "zone") {
+                      figure = <rect className="trainingFigure trainingZone" x="-45" y="-27" width="90" height="54" rx="5" fill="rgba(247,221,114,.16)" stroke="#f7dd72" strokeWidth="2.4" strokeDasharray="8 6" />;
+                    } else if (object.type === "circleShape") {
+                      figure = <circle className="trainingFigure trainingZone" r="30" fill="rgba(112,240,166,.12)" stroke="#70f0a6" strokeWidth="2.4" strokeDasharray="8 6" />;
+                    } else if (object.type === "semicircle") {
+                      figure = <path className="trainingFigure trainingZone" d="M-35,16 A35,35 0 0 1 35,16" fill="none" stroke="#c6b9ff" strokeWidth="2.7" strokeDasharray="8 6" />;
+                    }
+
+                    return (
+                      <g key={object.id} data-board-object="true" transform={figureTransform} opacity={dimmed ? .5 : 1} onPointerDown={(event) => handleObjectPointerDown(event, object)} onContextMenu={(event) => handleObjectContextMenu(event, object)} style={{ cursor }}>
+                        <rect className="touchTarget" x="-39" y="-39" width="78" height="78" rx="10" fill="transparent" />
+                        {selected && <circle r="39" fill="rgba(247,221,114,.05)" stroke="#f7dd72" strokeWidth="2.2" strokeDasharray="5 5" />}
+                        {figure}
                       </g>
                     );
                   }
 
                   const fill = object.team === "blue" ? "#3a8bff" : "#ff5c6c";
                   return (
-                    <g key={object.id} data-board-object="true" transform={`translate(${point.x} ${point.y})`} opacity={dimmed ? .48 : 1} onPointerDown={(event) => handleObjectPointerDown(event, object)} onContextMenu={(event) => handleObjectContextMenu(event, object)} style={{ cursor }}>
-                      {selected && <circle r="25" fill="rgba(247,221,114,.1)" stroke="#f7dd72" strokeWidth="2.8" filter="url(#softGlow)" />}
+                    <g key={object.id} data-board-object="true" transform={\`translate(\${point.x} \${point.y})\`} opacity={dimmed ? .48 : 1} onPointerDown={(event) => handleObjectPointerDown(event, object)} onContextMenu={(event) => handleObjectContextMenu(event, object)} style={{ cursor }}>
+                      <circle className="touchTarget" r="23" fill="transparent" />
+                      {selected && <circle r="19" fill="rgba(247,221,114,.1)" stroke="#f7dd72" strokeWidth="2.5" filter="url(#softGlow)" />}
                       {object.role === "keeper" ? (
-                        <rect x="-16" y="-16" width="32" height="32" rx="8" fill={fill} stroke="#fff" strokeWidth="2.8" />
+                        <rect x="-12" y="-12" width="24" height="24" rx="6" fill={fill} stroke="#fff" strokeWidth="2.3" />
                       ) : (
-                        <circle r="16" fill={fill} stroke="#fff" strokeWidth="2.8" />
+                        <circle r="12" fill={fill} stroke="#fff" strokeWidth="2.3" />
                       )}
-                      <text y="5" textAnchor="middle" fill="#fff" fontSize="13" fontWeight="900" pointerEvents="none">{object.number || "•"}</text>
-                      {object.name && <text y="31" textAnchor="middle" fill="#fff" stroke="rgba(0,0,0,.62)" strokeWidth="3.5" paintOrder="stroke" fontSize="12" fontWeight="800" pointerEvents="none">{object.name}</text>}
+                      <text y="4" textAnchor="middle" fill="#fff" fontSize="10.5" fontWeight="900" pointerEvents="none">{object.number || "•"}</text>
+                      {object.name && <text y="25" textAnchor="middle" fill="#fff" stroke="rgba(0,0,0,.62)" strokeWidth="3" paintOrder="stroke" fontSize="10" fontWeight="800" pointerEvents="none">{object.name}</text>}
                     </g>
                   );
                 })}
@@ -1434,7 +1561,7 @@ export default function Home() {
               <div className="inspectorEmpty">
                 <div className="inspectorGlyph">↖</div>
                 <strong>Velg et objekt</strong>
-                <p>Trykk på spiller, ball eller kjegle. Høyreklikk på PC for hurtigmeny.</p>
+                <p>Trykk på spiller, ball, kjegle eller figur. Høyreklikk på PC for hurtigmeny.</p>
                 <div className="shortcutCard"><span>Mellomrom</span><b>Play / pause</b><span>R</span><b>Revers</b><span>Ctrl/Cmd+Z</span><b>Angre</b></div>
               </div>
             ) : (
@@ -1444,6 +1571,21 @@ export default function Home() {
                     <div className="inspectorGroupTitle">Spiller</div>
                     <label className="fieldLabel">Navn<input className="darkInput" value={selectedObject.name ?? ""} maxLength={18} placeholder="f.eks. Nico" onChange={(event) => updateSelected({ name: event.target.value })} /></label>
                     <label className="fieldLabel">Nummer<input className="darkInput" value={selectedObject.number ?? ""} maxLength={3} onChange={(event) => updateSelected({ number: event.target.value })} /></label>
+                  </div>
+                )}
+
+                {isFigureObject(selectedObject) && (
+                  <div className="inspectorGroup figureInspector">
+                    <div className="inspectorGroupTitle">Figur</div>
+                    <label className="rangeField">
+                      <span><b>Størrelse</b><em>{Math.round((selectedObject.scale ?? 1) * 100)}%</em></span>
+                      <input type="range" min="0.5" max="2.5" step="0.05" value={selectedObject.scale ?? 1} onChange={(event) => updateSelected({ scale: Number(event.target.value) })} />
+                    </label>
+                    <label className="rangeField">
+                      <span><b>Rotasjon</b><em>{Math.round(selectedObject.rotation ?? 0)}°</em></span>
+                      <input type="range" min="0" max="359" step="1" value={selectedObject.rotation ?? 0} onChange={(event) => updateSelected({ rotation: Number(event.target.value) })} />
+                    </label>
+                    <button className="secondaryButton full" type="button" onClick={() => updateSelected({ scale: 1, rotation: 0 })}>Nullstill figur</button>
                   </div>
                 )}
 

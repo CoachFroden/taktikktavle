@@ -79,6 +79,7 @@ type BoardLine = {
   actorId?: string;
   timingStart?: number;
   timingDuration?: number;
+  endSnapId?: string;
 };
 
 type Scene = {
@@ -96,6 +97,7 @@ type DrawingLine = {
   sequenceOrder?: number;
   animationKind?: Exclude<LineAnimationMode, "off">;
   actorId?: string;
+  snapTargetLineId?: string;
 };
 
 type FreehandDrawing = {
@@ -376,6 +378,18 @@ export default function Home() {
     () => [...lines].reverse().find((line) => line.sequenceId && line.animationKind && line.actorId) ?? null,
     [lines],
   );
+  const visibleSnapPoints = useMemo(() => {
+    const groups = new Map<string, { point: Point; count: number }>();
+    for (const line of lines) {
+      if (!line.endSnapId) continue;
+      const current = groups.get(line.endSnapId);
+      if (current) current.count += 1;
+      else groups.set(line.endSnapId, { point: { ...line.end }, count: 1 });
+    }
+    return Array.from(groups.entries())
+      .filter(([, value]) => value.count >= 2)
+      .map(([id, value]) => ({ id, ...value }));
+  }, [lines]);
 
   const sceneDuration = useMemo(() => {
     const objectEnds = objects.filter(hasMotion).map((object) => (object.motionStart ?? 0) + (object.motionDuration ?? 2));
@@ -457,6 +471,35 @@ export default function Home() {
     if (!matrix) return { x: 500, y: 325 };
     const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
     return { x: clamp(point.x, 0, 1000), y: clamp(point.y, 0, 650) };
+  }
+
+  function lineSnapThreshold() {
+    const svg = svgRef.current;
+    if (!svg) return 18;
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width || !rect.height) return 18;
+    const boardUnitsPerPixel = Math.max(visibleWidth / rect.width, visibleHeight / rect.height);
+    return Math.max(10, 18 * boardUnitsPerPixel);
+  }
+
+  function findLineEndSnap(point: Point, disabled = false) {
+    if (disabled || lines.length === 0) return null;
+    const threshold = lineSnapThreshold();
+    let best: BoardLine | null = null;
+    let bestDistance = threshold;
+
+    for (const line of lines) {
+      const distance = pointDistance(point, line.end);
+      if (
+        distance < bestDistance ||
+        (Math.abs(distance - bestDistance) < 0.001 && line.endSnapId && !best?.endSnapId)
+      ) {
+        best = line;
+        bestDistance = distance;
+      }
+    }
+
+    return best ? { line: best, point: { ...best.end }, distance: bestDistance } : null;
   }
 
   function resetView(nextView = pitchView) {
@@ -656,8 +699,9 @@ export default function Home() {
               const movementLines = sortedSequence(movementId);
               const last = movementLines[movementLines.length - 1];
               if (!last || last.timingStart === undefined || last.timingDuration === undefined) continue;
+              if (!line.endSnapId || !last.endSnapId || line.endSnapId !== last.endSnapId) continue;
               const distance = pointDistance(last.end, line.end);
-              if (distance <= 30 && distance < bestDistance) {
+              if (distance < bestDistance) {
                 bestDistance = distance;
                 bestArrival = last.timingStart + last.timingDuration;
               }
@@ -725,8 +769,9 @@ export default function Home() {
           const movementLines = sortedSequence(movementId);
           const last = movementLines[movementLines.length - 1];
           if (!last || last.timingStart === undefined || last.timingDuration === undefined) continue;
+          if (!passLine.endSnapId || !last.endSnapId || passLine.endSnapId !== last.endSnapId) continue;
           const distance = pointDistance(last.end, passLine.end);
-          if (distance <= 30 && distance < bestDistance) {
+          if (distance < bestDistance) {
             targetLine = last;
             targetArrival = last.timingStart + last.timingDuration;
             bestDistance = distance;
@@ -903,7 +948,14 @@ export default function Home() {
       updateCurrentObjectsWithoutHistory((items) => items.map((object) => object.id === draggingId ? { ...object, x: point.x, y: point.y } : object));
     }
 
-    if (drawing) setDrawing({ ...drawing, current: point });
+    if (drawing) {
+      const snap = findLineEndSnap(point, event.altKey);
+      setDrawing({
+        ...drawing,
+        current: snap ? snap.point : point,
+        snapTargetLineId: snap?.line.id,
+      });
+    }
 
     const freehand = freehandRef.current;
     if (freehand && tool === "freeMovement") {
@@ -963,7 +1015,11 @@ export default function Home() {
     if (freehandRef.current) finishFreehand(event);
 
     if (drawing) {
-      const end = boardPoint(event);
+      const rawEnd = boardPoint(event);
+      const snap = findLineEndSnap(rawEnd, event.altKey);
+      const end = snap ? snap.point : rawEnd;
+      const snapId = snap ? (snap.line.endSnapId ?? makeId()) : undefined;
+
       if (pointDistance(drawing.start, end) > 10) {
         const line: BoardLine = {
           id: makeId(),
@@ -975,9 +1031,14 @@ export default function Home() {
           sequenceOrder: drawing.sequenceOrder,
           animationKind: drawing.animationKind,
           actorId: drawing.actorId,
+          endSnapId: snapId,
         };
 
         mutateCurrentScene((scene) => {
+          if (snap && snapId) {
+            const target = scene.lines.find((item) => item.id === snap.line.id);
+            if (target && !target.endSnapId) target.endSnapId = snapId;
+          }
           scene.lines.push(line);
 
           if (!drawing.animationKind || !drawing.actorId) return;
@@ -1012,10 +1073,12 @@ export default function Home() {
           setLineAnimationStep(drawing.sequenceOrder ?? lineAnimationStep + 1);
           setPlayhead(0);
           setStatus(
-            `Steg ${drawing.sequenceOrder ?? lineAnimationStep + 1} lagret. Tegn neste linje for å legge til neste steg, eller trykk Play.`,
+            snap
+              ? `Steg ${drawing.sequenceOrder ?? lineAnimationStep + 1} lagret og snappet til felles ankomstpunkt.`
+              : `Steg ${drawing.sequenceOrder ?? lineAnimationStep + 1} lagret. Tegn neste linje for å legge til neste steg, eller trykk Play.`,
           );
         } else {
-          setStatus("Linje lagt til. Ctrl/Cmd+Z angrer.");
+          setStatus(snap ? "Linjen er snappet til et eksisterende endepunkt." : "Linje lagt til. Ctrl/Cmd+Z angrer.");
         }
       }
       setDrawing(null);
@@ -1790,7 +1853,7 @@ export default function Home() {
                 </div>
               )}
               <small className="lineColorHint">
-                Nye linjer blir automatisk steg 1, 2, 3 … og spilles i samme rekkefølge.
+                Nye linjer blir automatisk steg 1, 2, 3 … og spilles i samme rekkefølge. Dra nær et eksisterende endepunkt for å snappe og synkronisere ankomsten.
               </small>
             </section>
 
@@ -1926,6 +1989,13 @@ export default function Home() {
                   );
                 })}
 
+                {visibleSnapPoints.map((snap) => (
+                  <g key={`snap-${snap.id}`} className="sharedSnapPoint" transform={`translate(${snap.point.x} ${snap.point.y})`} pointerEvents="none">
+                    <circle r="7" fill="#081511" stroke="#70f0a6" strokeWidth="1.8" opacity=".9" />
+                    <circle r="2.2" fill="#70f0a6" />
+                  </g>
+                ))}
+
                 {drawing && (
                   <g>
                     <line
@@ -1935,6 +2005,13 @@ export default function Home() {
                       markerEnd={drawing.type === "arrow" || drawing.type === "rotation" ? "url(#arrowHead)" : undefined}
                       opacity=".96"
                     />
+                    {drawing.snapTargetLineId && (
+                      <g className="snapPreview" transform={`translate(${drawing.current.x} ${drawing.current.y})`} pointerEvents="none">
+                        <circle r="17" fill="rgba(112,240,166,.10)" stroke="#70f0a6" strokeWidth="2.4" />
+                        <circle r="5" fill="#70f0a6" />
+                        <text y="-23" textAnchor="middle" fill="#dfffea" fontSize="10" fontWeight="900">SYNK</text>
+                      </g>
+                    )}
                     {drawing.sequenceOrder ? (
                       <g transform={`translate(${(drawing.start.x + drawing.current.x) / 2} ${(drawing.start.y + drawing.current.y) / 2})`}>
                         <circle r="9" fill="#081511" stroke={lineColor} strokeWidth="1.8" />

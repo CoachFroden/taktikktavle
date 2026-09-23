@@ -77,6 +77,8 @@ type BoardLine = {
   sequenceOrder?: number;
   animationKind?: Exclude<LineAnimationMode, "off">;
   actorId?: string;
+  timingStart?: number;
+  timingDuration?: number;
 };
 
 type Scene = {
@@ -376,11 +378,18 @@ export default function Home() {
   );
 
   const sceneDuration = useMemo(() => {
-    const ends = objects.filter(hasMotion).map((object) => (object.motionStart ?? 0) + (object.motionDuration ?? 2));
+    const objectEnds = objects.filter(hasMotion).map((object) => (object.motionStart ?? 0) + (object.motionDuration ?? 2));
+    const lineEnds = lines
+      .filter((line) => line.animationKind && line.actorId && line.timingStart !== undefined && line.timingDuration !== undefined)
+      .map((line) => (line.timingStart ?? 0) + (line.timingDuration ?? 0));
+    const ends = [...objectEnds, ...lineEnds];
     return ends.length > 0 ? Math.max(...ends) : 4;
-  }, [objects]);
+  }, [objects, lines]);
 
-  const animatedObjects = useMemo(() => objects.filter(hasMotion), [objects]);
+  const animatedObjects = useMemo(
+    () => objects.filter((object) => hasMotion(object) || lines.some((line) => line.actorId === object.id && line.animationKind)),
+    [objects, lines],
+  );
   const config = pitchConfig[pitch];
   const baseView = pitchViews[pitchView];
   const visibleWidth = baseView.width / zoom;
@@ -608,6 +617,159 @@ export default function Home() {
     const unitsPerSecond = kind === "pass" ? 260 : kind === "run" ? 115 : 95;
     const minimum = kind === "pass" ? 0.35 : 0.55;
     return Math.max(minimum, distance / unitsPerSecond);
+  }
+
+  function recalculateHiddenLineTiming(scene: Scene) {
+    const animatedLines = scene.lines.filter((line) => line.animationKind && line.actorId && line.sequenceId);
+    if (animatedLines.length === 0) return;
+
+    const sequenceIds = Array.from(new Set(animatedLines.map((line) => line.sequenceId as string)));
+    const passSequenceIds = sequenceIds.filter((sequenceId) =>
+      animatedLines.some((line) => line.sequenceId === sequenceId && line.animationKind === "pass"),
+    );
+    const movementSequenceIds = sequenceIds.filter((sequenceId) =>
+      animatedLines.some((line) => line.sequenceId === sequenceId && (line.animationKind === "run" || line.animationKind === "rotation")),
+    );
+
+    const sortedSequence = (sequenceId: string) =>
+      animatedLines
+        .filter((line) => line.sequenceId === sequenceId)
+        .sort((a, b) => (a.sequenceOrder ?? 0) - (b.sequenceOrder ?? 0));
+
+    const naturalDuration = (line: BoardLine) =>
+      lineAnimationDuration(line.animationKind as Exclude<LineAnimationMode, "off">, [line.start, line.end]);
+
+    const schedulePasses = (useSyncTargets: boolean) => {
+      for (const sequenceId of passSequenceIds) {
+        const passLines = sortedSequence(sequenceId);
+        let cursor = 0;
+
+        for (const line of passLines) {
+          const duration = naturalDuration(line);
+          let start = cursor;
+
+          if (useSyncTargets) {
+            let bestArrival: number | null = null;
+            let bestDistance = Number.POSITIVE_INFINITY;
+
+            for (const movementId of movementSequenceIds) {
+              const movementLines = sortedSequence(movementId);
+              const last = movementLines[movementLines.length - 1];
+              if (!last || last.timingStart === undefined || last.timingDuration === undefined) continue;
+              const distance = pointDistance(last.end, line.end);
+              if (distance <= 30 && distance < bestDistance) {
+                bestDistance = distance;
+                bestArrival = last.timingStart + last.timingDuration;
+              }
+            }
+
+            if (bestArrival !== null) start = Math.max(start, bestArrival - duration);
+          }
+
+          line.timingStart = start;
+          line.timingDuration = duration;
+          cursor = start + duration;
+        }
+      }
+    };
+
+    const scheduleMovements = () => {
+      const passLines = passSequenceIds.flatMap((sequenceId) => sortedSequence(sequenceId));
+
+      for (const sequenceId of movementSequenceIds) {
+        const movementLines = sortedSequence(sequenceId);
+        if (movementLines.length === 0) continue;
+
+        const first = movementLines[0];
+        let trigger: BoardLine | null = null;
+        let bestDistance = Number.POSITIVE_INFINITY;
+
+        for (const passLine of passLines) {
+          if (passLine.timingStart === undefined) continue;
+          const distance = pointDistance(passLine.start, first.start);
+          if (distance <= 30 && distance < bestDistance) {
+            trigger = passLine;
+            bestDistance = distance;
+          }
+        }
+
+        let cursor = trigger?.timingStart ?? 0;
+        for (const line of movementLines) {
+          const duration = naturalDuration(line);
+          line.timingStart = cursor;
+          line.timingDuration = duration;
+          cursor += duration;
+        }
+      }
+    };
+
+    schedulePasses(false);
+    for (let iteration = 0; iteration < 4; iteration += 1) {
+      scheduleMovements();
+      schedulePasses(true);
+    }
+    scheduleMovements();
+    schedulePasses(true);
+    scheduleMovements();
+
+    for (const passSequenceId of passSequenceIds) {
+      for (const passLine of sortedSequence(passSequenceId)) {
+        if (passLine.timingStart === undefined || passLine.timingDuration === undefined) continue;
+        const passArrival = passLine.timingStart + passLine.timingDuration;
+
+        let targetLine: BoardLine | null = null;
+        let targetArrival = 0;
+        let bestDistance = Number.POSITIVE_INFINITY;
+
+        for (const movementId of movementSequenceIds) {
+          const movementLines = sortedSequence(movementId);
+          const last = movementLines[movementLines.length - 1];
+          if (!last || last.timingStart === undefined || last.timingDuration === undefined) continue;
+          const distance = pointDistance(last.end, passLine.end);
+          if (distance <= 30 && distance < bestDistance) {
+            targetLine = last;
+            targetArrival = last.timingStart + last.timingDuration;
+            bestDistance = distance;
+          }
+        }
+
+        if (targetLine && passArrival > targetArrival + 0.01) {
+          targetLine.timingDuration = Math.max(
+            0.15,
+            (targetLine.timingDuration ?? 0) + (passArrival - targetArrival),
+          );
+        }
+      }
+    }
+
+    for (const object of scene.objects) {
+      const actorLines = animatedLines
+        .filter((line) =>
+          line.actorId === object.id &&
+          line.timingStart !== undefined &&
+          line.timingDuration !== undefined
+        )
+        .sort((a, b) => (a.timingStart ?? 0) - (b.timingStart ?? 0));
+
+      if (actorLines.length === 0) continue;
+
+      const first = actorLines[0];
+      let last = actorLines[0];
+      for (const line of actorLines) {
+        const lineEnd = (line.timingStart ?? 0) + (line.timingDuration ?? 0);
+        const lastEnd = (last.timingStart ?? 0) + (last.timingDuration ?? 0);
+        if (lineEnd > lastEnd) last = line;
+      }
+
+      const start = first.timingStart ?? 0;
+      const end = (last.timingStart ?? 0) + (last.timingDuration ?? 0);
+      object.x = first.start.x;
+      object.y = first.start.y;
+      object.target = undefined;
+      object.motionPath = [{ ...first.start }, ...actorLines.map((line) => ({ ...line.end }))];
+      object.motionStart = start;
+      object.motionDuration = Math.max(0.15, end - start);
+    }
   }
 
   function chooseTool(nextTool: Tool) {
@@ -842,6 +1004,7 @@ export default function Home() {
           actor.motionPath = path;
           actor.motionStart = 0;
           actor.motionDuration = lineAnimationDuration(drawing.animationKind, path);
+          recalculateHiddenLineTiming(scene);
         });
 
         if (drawing.animationKind) {
@@ -969,6 +1132,39 @@ export default function Home() {
   }
 
   function displayPoint(object: BoardObject, time = playhead): Point {
+    const timedLines = lines
+      .filter((line) =>
+        line.actorId === object.id &&
+        line.animationKind &&
+        line.timingStart !== undefined &&
+        line.timingDuration !== undefined
+      )
+      .sort((a, b) => (a.timingStart ?? 0) - (b.timingStart ?? 0));
+
+    if (timedLines.length > 0) {
+      const first = timedLines[0];
+      if (time <= (first.timingStart ?? 0)) return { ...first.start };
+
+      let lastPoint = { ...first.start };
+      for (const line of timedLines) {
+        const start = line.timingStart ?? 0;
+        const duration = Math.max(0.01, line.timingDuration ?? 0.01);
+        const end = start + duration;
+
+        if (time < start) return lastPoint;
+        if (time <= end) {
+          const progress = clamp((time - start) / duration, 0, 1);
+          return {
+            x: line.start.x + (line.end.x - line.start.x) * progress,
+            y: line.start.y + (line.end.y - line.start.y) * progress,
+          };
+        }
+
+        lastPoint = { ...line.end };
+      }
+      return lastPoint;
+    }
+
     const progress = localMotionProgress(object, time);
     if (object.motionPath && object.motionPath.length > 1) return pointAlongPath(object.motionPath, progress);
     if (!object.target) return { x: object.x, y: object.y };
@@ -1164,6 +1360,7 @@ export default function Home() {
     actor.motionPath = path;
     actor.motionStart = 0;
     actor.motionDuration = lineAnimationDuration(kind, path);
+    recalculateHiddenLineTiming(scene);
   }
 
   function deleteSelectedLine() {
@@ -1186,6 +1383,7 @@ export default function Home() {
           }
         }
       }
+      recalculateHiddenLineTiming(scene);
     });
     setSelectedLineId(null);
     setPlayhead(0);
@@ -1341,7 +1539,11 @@ export default function Home() {
         if (parsed.title) setTitle(parsed.title);
         if (parsed.pitch && pitchConfig[parsed.pitch]) setPitch(parsed.pitch);
         if (parsed.pitchView && pitchViews[parsed.pitchView]) changePitchView(parsed.pitchView);
-        if (Array.isArray(parsed.scenes) && parsed.scenes.length) setScenes(parsed.scenes);
+        if (Array.isArray(parsed.scenes) && parsed.scenes.length) {
+          const restoredScenes = clone(parsed.scenes);
+          restoredScenes.forEach((scene) => recalculateHiddenLineTiming(scene));
+          setScenes(restoredScenes);
+        }
         setSceneIndex(0);
         setSelectedId(null);
         setHistoryPast([]);
@@ -1359,7 +1561,9 @@ export default function Home() {
       const parsed = JSON.parse(legacy) as { title?: string; pitch?: PitchType; objects?: BoardObject[]; lines?: BoardLine[] };
       if (parsed.title) setTitle(parsed.title);
       if (parsed.pitch && pitchConfig[parsed.pitch]) setPitch(parsed.pitch);
-      setScenes([{ id: makeId(), name: "Scene 1", objects: parsed.objects ?? [], lines: parsed.lines ?? [] }]);
+      const restoredScene: Scene = { id: makeId(), name: "Scene 1", objects: parsed.objects ?? [], lines: parsed.lines ?? [] };
+      recalculateHiddenLineTiming(restoredScene);
+      setScenes([restoredScene]);
       setSceneIndex(0);
       setSelectedId(null);
       setHistoryPast([]);

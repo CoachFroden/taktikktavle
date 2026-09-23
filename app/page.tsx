@@ -1370,7 +1370,7 @@ export default function Home() {
 
                   if (object.type === "ball") {
                     return (
-                      <g key={object.id} data-board-object="true" transform={\`translate(\${point.x} \${point.y})\`} opacity={dimmed ? .58 : 1} onPointerDown={(event) => handleObjectPointerDown(event, object)} onContextMenu={(event) => handleObjectContextMenu(event, object)} style={{ cursor }}>
+                      <g key={object.id} data-board-object="true" transform={`translate(${point.x} ${point.y})`} opacity={dimmed ? .58 : 1} onPointerDown={(event) => handleObjectPointerDown(event, object)} onContextMenu={(event) => handleObjectContextMenu(event, object)} style={{ cursor }}>
                         <circle className="touchTarget" r="20" fill="transparent" />
                         {selected && <circle r="14" fill="rgba(247,221,114,.11)" stroke="#f7dd72" strokeWidth="2.4" filter="url(#softGlow)" />}
                         <circle r="7" fill="#fff" stroke="#111" strokeWidth="1.8" />
@@ -1381,7 +1381,7 @@ export default function Home() {
 
                   if (object.type === "cone") {
                     return (
-                      <g key={object.id} data-board-object="true" transform={\`translate(\${point.x} \${point.y})\`} opacity={dimmed ? .58 : 1} onPointerDown={(event) => handleObjectPointerDown(event, object)} onContextMenu={(event) => handleObjectContextMenu(event, object)} style={{ cursor }}>
+                      <g key={object.id} data-board-object="true" transform={`translate(${point.x} ${point.y})`} opacity={dimmed ? .58 : 1} onPointerDown={(event) => handleObjectPointerDown(event, object)} onContextMenu={(event) => handleObjectContextMenu(event, object)} style={{ cursor }}>
                         <circle className="touchTarget" r="21" fill="transparent" />
                         {selected && <circle r="15" fill="none" stroke="#f7dd72" strokeWidth="2.4" />}
                         <path d="M0,-10 L9,8 L-9,8Z" fill="#ff9f43" stroke="#fff" strokeWidth="1.4" />
@@ -1393,7 +1393,7 @@ export default function Home() {
                   if (isFigureObject(object)) {
                     const figureScale = object.scale ?? 1;
                     const figureRotation = object.rotation ?? 0;
-                    const figureTransform = \`translate(\${point.x} \${point.y}) rotate(\${figureRotation}) scale(\${figureScale})\`;
+                    const figureTransform = `translate(${point.x} ${point.y}) rotate(${figureRotation}) scale(${figureScale})`;
                     let figure: ReactNode = null;
 
                     if (object.type === "mannequin") {
@@ -1455,7 +1455,7 @@ export default function Home() {
 
                   const fill = object.team === "blue" ? "#3a8bff" : "#ff5c6c";
                   return (
-                    <g key={object.id} data-board-object="true" transform={\`translate(\${point.x} \${point.y})\`} opacity={dimmed ? .48 : 1} onPointerDown={(event) => handleObjectPointerDown(event, object)} onContextMenu={(event) => handleObjectContextMenu(event, object)} style={{ cursor }}>
+                    <g key={object.id} data-board-object="true" transform={`translate(${point.x} ${point.y})`} opacity={dimmed ? .48 : 1} onPointerDown={(event) => handleObjectPointerDown(event, object)} onContextMenu={(event) => handleObjectContextMenu(event, object)} style={{ cursor }}>
                       <circle className="touchTarget" r="23" fill="transparent" />
                       {selected && <circle r="19" fill="rgba(247,221,114,.1)" stroke="#f7dd72" strokeWidth="2.5" filter="url(#softGlow)" />}
                       {object.role === "keeper" ? (

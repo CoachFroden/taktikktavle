@@ -346,6 +346,8 @@ export default function Home() {
   const [historyFuture, setHistoryFuture] = useState<Scene[][]>([]);
   const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [showGuideLines, setShowGuideLines] = useState(true);
+  const [hideGuideLinesDuringPlayback, setHideGuideLinesDuringPlayback] = useState(true);
   const [speed, setSpeed] = useState(1);
   const [lineColor, setLineColor] = useState("#ffffff");
   const [lineAnimationMode, setLineAnimationMode] = useState<LineAnimationMode>("off");
@@ -411,6 +413,7 @@ export default function Home() {
   const visibleX = clamp(viewCenter.x - visibleWidth / 2, 0, 1000 - visibleWidth);
   const visibleY = clamp(viewCenter.y - visibleHeight / 2, 0, 650 - visibleHeight);
   const currentViewBox = `${visibleX} ${visibleY} ${visibleWidth} ${visibleHeight}`;
+  const guideLinesVisible = showGuideLines && !(hideGuideLinesDuringPlayback && (isPlaying || pendingSequenceDirection !== null));
 
   function snapshotForHistory(snapshot: Scene[]) {
     setHistoryPast((current) => [...current.slice(-39), clone(snapshot)]);
@@ -1944,7 +1947,7 @@ export default function Home() {
 
                 {renderPitch()}
 
-                {lines.map((line) => {
+                {guideLinesVisible && lines.map((line) => {
                   const color = line.color ?? "#ffffff";
                   const isWhite = color.toLowerCase() === "#ffffff" || color.toLowerCase() === "#fff";
                   const midX = (line.start.x + line.end.x) / 2;
@@ -1989,7 +1992,7 @@ export default function Home() {
                   );
                 })}
 
-                {visibleSnapPoints.map((snap) => (
+                {guideLinesVisible && visibleSnapPoints.map((snap) => (
                   <g key={`snap-${snap.id}`} className="sharedSnapPoint" transform={`translate(${snap.point.x} ${snap.point.y})`} pointerEvents="none">
                     <circle r="7" fill="#081511" stroke="#70f0a6" strokeWidth="1.8" opacity=".9" />
                     <circle r="2.2" fill="#70f0a6" />
@@ -2026,14 +2029,14 @@ export default function Home() {
                   </g>
                 )}
 
-                {objects.map((object) => object.target && (
+                {guideLinesVisible && objects.map((object) => object.target && (
                   <g key={`target-${object.id}`} opacity={object.id === selectedId ? ".9" : ".42"}>
                     <line x1={object.x} y1={object.y} x2={object.target.x} y2={object.target.y} stroke={object.id === selectedId ? "#f7dd72" : "#fff"} strokeWidth="2.6" strokeDasharray="8 9" />
                     <circle cx={object.target.x} cy={object.target.y} r="8" fill="none" stroke="#fff" strokeWidth="2.5" />
                   </g>
                 ))}
 
-                {objects.map((object) => object.motionPath && object.motionPath.length > 1 && (
+                {guideLinesVisible && objects.map((object) => object.motionPath && object.motionPath.length > 1 && (
                   <g key={`path-${object.id}`} opacity={object.id === selectedId ? ".95" : ".38"}>
                     <polyline
                       points={object.motionPath.map((point) => `${point.x},${point.y}`).join(" ")}
@@ -2178,6 +2181,37 @@ export default function Home() {
               <button className={`playButton ${isPlaying && playDirectionRef.current === 1 ? "playing" : ""}`} type="button" onClick={toggleForward} title="Play / pause (mellomrom)">{isPlaying && playDirectionRef.current === 1 ? "❚❚" : "▶"}</button>
               <div className="timeReadout"><strong>{playhead.toFixed(1)}</strong><span>/ {sceneDuration.toFixed(1)} s</span></div>
               <input className="scrubber" type="range" min="0" max={sceneDuration} step="0.02" value={playhead} onChange={(event) => { if (animationRef.current !== null) cancelAnimationFrame(animationRef.current); setIsPlaying(false); setPlayhead(Number(event.target.value)); }} aria-label="Tidslinje" />
+              <div className="lineVisibilityControls" aria-label="Visning av hjelpelinjer">
+                <button
+                  className={`miniButton text ${showGuideLines ? "active" : ""}`}
+                  type="button"
+                  onClick={() => {
+                    setShowGuideLines((current) => {
+                      const next = !current;
+                      setStatus(next ? "Hjelpelinjene vises." : "Hjelpelinjene er skjult.");
+                      return next;
+                    });
+                  }}
+                  title="Vis eller skjul alle hjelpe- og animasjonslinjer"
+                >
+                  {showGuideLines ? "◉ Linjer" : "○ Linjer"}
+                </button>
+                <button
+                  className={`miniButton text ${hideGuideLinesDuringPlayback ? "active" : ""}`}
+                  type="button"
+                  onClick={() => {
+                    setHideGuideLinesDuringPlayback((current) => {
+                      const next = !current;
+                      setStatus(next ? "Linjene skjules automatisk under avspilling." : "Linjene forblir synlige under avspilling.");
+                      return next;
+                    });
+                  }}
+                  disabled={!showGuideLines}
+                  title="Skjul linjene automatisk mens animasjonen spiller"
+                >
+                  {hideGuideLinesDuringPlayback ? "✓ Auto-skjul" : "Auto-skjul"}
+                </button>
+              </div>
               <select className="darkSelect speedSelect" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} aria-label="Avspillingsfart">
                 <option value={0.5}>0,5×</option><option value={1}>1×</option><option value={1.5}>1,5×</option><option value={2}>2×</option>
               </select>

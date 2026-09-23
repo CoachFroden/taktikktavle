@@ -58,6 +58,7 @@ type BoardObject = {
   role?: "player" | "keeper";
   number?: string;
   name?: string;
+  color?: string;
   scale?: number;
   rotation?: number;
   target?: Point;
@@ -271,6 +272,34 @@ const figureLabels: Partial<Record<ObjectType, string>> = {
 
 function isFigureObject(object: BoardObject) {
   return Boolean(figureLabels[object.type]);
+}
+
+function defaultObjectColor(object: BoardObject) {
+  if (object.type === "player") return object.team === "red" ? "#ff5c6c" : "#3a8bff";
+  if (object.type === "ball") return "#ffffff";
+  if (object.type === "cone") return "#ff9f43";
+  if (object.type === "mannequin") return "#f0b84b";
+  if (object.type === "miniGoal") return "#f6f8f7";
+  if (object.type === "ladder") return "#f7dd72";
+  if (object.type === "hurdle" || object.type === "gate") return "#ff9f43";
+  if (object.type === "zone") return "#f7dd72";
+  if (object.type === "circleShape") return "#70f0a6";
+  if (object.type === "semicircle") return "#c6b9ff";
+  return "#ffffff";
+}
+
+function contrastColor(hex: string) {
+  const normalized = hex.replace("#", "");
+  const full = normalized.length === 3
+    ? normalized.split("").map((char) => char + char).join("")
+    : normalized.padEnd(6, "0").slice(0, 6);
+  const value = Number.parseInt(full, 16);
+  if (Number.isNaN(value)) return "#ffffff";
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.62 ? "#111111" : "#ffffff";
 }
 
 function motionLabel(object: BoardObject) {
@@ -1032,6 +1061,14 @@ export default function Home() {
     }
   }
 
+  function updateSelectedLineColor(color?: string) {
+    if (!selectedLineId) return;
+    mutateCurrentScene((scene) => {
+      scene.lines = scene.lines.map((line) => line.id === selectedLineId ? { ...line, color } : line);
+    });
+    setStatus(color ? "Linjefargen er endret." : "Linjen bruker standardfarge igjen.");
+  }
+
   function clearMovement() {
     if (!selectedId) return;
     updateSelected({ target: undefined, motionPath: undefined, motionStart: undefined, motionDuration: undefined });
@@ -1683,14 +1720,16 @@ export default function Home() {
                   const selected = object.id === selectedId;
                   const dimmed = selectedId && !selected && tool === "select";
                   const cursor = tool === "select" ? "grab" : tool === "freeMovement" ? "crosshair" : tool === "hand" ? "grab" : "pointer";
+                  const objectColor = object.color ?? defaultObjectColor(object);
+                  const objectContrast = contrastColor(objectColor);
 
                   if (object.type === "ball") {
                     return (
                       <g key={object.id} data-board-object="true" transform={`translate(${point.x} ${point.y})`} opacity={dimmed ? .58 : 1} onPointerDown={(event) => handleObjectPointerDown(event, object)} onContextMenu={(event) => handleObjectContextMenu(event, object)} style={{ cursor }}>
                         <circle className="touchTarget" r="20" fill="transparent" />
                         {selected && <circle r="14" fill="rgba(247,221,114,.11)" stroke="#f7dd72" strokeWidth="2.4" filter="url(#softGlow)" />}
-                        <circle r="7" fill="#fff" stroke="#111" strokeWidth="1.8" />
-                        <path d="M0,-3 3,-1 2,3 -2,3 -3,-1Z" fill="#151515" />
+                        <circle r="7" fill={objectColor} stroke={objectContrast} strokeWidth="1.8" />
+                        <path d="M0,-3 3,-1 2,3 -2,3 -3,-1Z" fill={objectContrast} />
                       </g>
                     );
                   }
@@ -1700,8 +1739,8 @@ export default function Home() {
                       <g key={object.id} data-board-object="true" transform={`translate(${point.x} ${point.y})`} opacity={dimmed ? .58 : 1} onPointerDown={(event) => handleObjectPointerDown(event, object)} onContextMenu={(event) => handleObjectContextMenu(event, object)} style={{ cursor }}>
                         <circle className="touchTarget" r="21" fill="transparent" />
                         {selected && <circle r="15" fill="none" stroke="#f7dd72" strokeWidth="2.4" />}
-                        <path d="M0,-10 L9,8 L-9,8Z" fill="#ff9f43" stroke="#fff" strokeWidth="1.4" />
-                        <rect x="-11" y="7" width="22" height="4" rx="2" fill="#ff9f43" />
+                        <path d="M0,-10 L9,8 L-9,8Z" fill={objectColor} stroke={objectContrast} strokeWidth="1.4" />
+                        <rect x="-11" y="7" width="22" height="4" rx="2" fill={objectColor} />
                       </g>
                     );
                   }
@@ -1715,15 +1754,15 @@ export default function Home() {
                     if (object.type === "mannequin") {
                       figure = (
                         <g className="trainingFigure mannequinFigure">
-                          <circle cx="0" cy="-23" r="6" fill="#f0b84b" stroke="#fff" strokeWidth="1.7" />
-                          <path d="M-11,-14 Q0,-20 11,-14 L8,6 L4,20 L-4,20 L-8,6Z" fill="#f0b84b" stroke="#fff" strokeWidth="1.8" />
-                          <line x1="0" y1="20" x2="0" y2="31" stroke="#d79525" strokeWidth="3" />
-                          <line x1="-13" y1="31" x2="13" y2="31" stroke="#d79525" strokeWidth="4" strokeLinecap="round" />
+                          <circle cx="0" cy="-23" r="6" fill={objectColor} stroke={objectContrast} strokeWidth="1.7" />
+                          <path d="M-11,-14 Q0,-20 11,-14 L8,6 L4,20 L-4,20 L-8,6Z" fill={objectColor} stroke={objectContrast} strokeWidth="1.8" />
+                          <line x1="0" y1="20" x2="0" y2="31" stroke={objectColor} strokeWidth="3" />
+                          <line x1="-13" y1="31" x2="13" y2="31" stroke={objectColor} strokeWidth="4" strokeLinecap="round" />
                         </g>
                       );
                     } else if (object.type === "miniGoal") {
                       figure = (
-                        <g className="trainingFigure miniGoalFigure" fill="none" stroke="#f6f8f7" strokeWidth="2.5" strokeLinejoin="round">
+                        <g className="trainingFigure miniGoalFigure" fill="none" stroke={objectColor} strokeWidth="2.5" strokeLinejoin="round">
                           <path d="M-30,17 L-30,-15 L24,-15 L24,17Z" />
                           <path d="M24,-15 L32,-8 L32,20 L24,17 M-30,-15 L-22,-8 L32,-8" opacity=".75" />
                           <path d="M-22,-8 V20 H32 M-10,-8 V20 M2,-8 V20 M14,-8 V20 M26,-8 V20 M-22,1 H32 M-22,10 H32" opacity=".42" strokeWidth="1.1" />
@@ -1731,7 +1770,7 @@ export default function Home() {
                       );
                     } else if (object.type === "ladder") {
                       figure = (
-                        <g className="trainingFigure ladderFigure" fill="none" stroke="#f7dd72" strokeWidth="2.7" strokeLinecap="round">
+                        <g className="trainingFigure ladderFigure" fill="none" stroke={objectColor} strokeWidth="2.7" strokeLinecap="round">
                           <line x1="-12" y1="-30" x2="-12" y2="30" />
                           <line x1="12" y1="-30" x2="12" y2="30" />
                           {[-24, -12, 0, 12, 24].map((y) => <line key={y} x1="-12" y1={y} x2="12" y2={y} />)}
@@ -1739,7 +1778,7 @@ export default function Home() {
                       );
                     } else if (object.type === "hurdle") {
                       figure = (
-                        <g className="trainingFigure hurdleFigure" fill="none" stroke="#ff9f43" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+                        <g className="trainingFigure hurdleFigure" fill="none" stroke={objectColor} strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M-20,20 V-8 H20 V20" />
                           <line x1="-25" y1="20" x2="-14" y2="20" />
                           <line x1="14" y1="20" x2="25" y2="20" />
@@ -1748,16 +1787,16 @@ export default function Home() {
                     } else if (object.type === "gate") {
                       figure = (
                         <g className="trainingFigure gateFigure">
-                          <path d="M-22,-12 L-14,11 L-30,11Z M22,-12 L30,11 L14,11Z" fill="#ff9f43" stroke="#fff" strokeWidth="1.4" />
-                          <line x1="-13" y1="0" x2="13" y2="0" stroke="#70f0a6" strokeWidth="2.2" strokeDasharray="5 5" opacity=".9" />
+                          <path d="M-22,-12 L-14,11 L-30,11Z M22,-12 L30,11 L14,11Z" fill={objectColor} stroke={objectContrast} strokeWidth="1.4" />
+                          <line x1="-13" y1="0" x2="13" y2="0" stroke={objectColor} strokeWidth="2.2" strokeDasharray="5 5" opacity=".9" />
                         </g>
                       );
                     } else if (object.type === "zone") {
-                      figure = <rect className="trainingFigure trainingZone" x="-45" y="-27" width="90" height="54" rx="5" fill="rgba(247,221,114,.16)" stroke="#f7dd72" strokeWidth="2.4" strokeDasharray="8 6" />;
+                      figure = <rect className="trainingFigure trainingZone" x="-45" y="-27" width="90" height="54" rx="5" fill={objectColor} fillOpacity=".16" stroke={objectColor} strokeWidth="2.4" strokeDasharray="8 6" />;
                     } else if (object.type === "circleShape") {
-                      figure = <circle className="trainingFigure trainingZone" r="30" fill="rgba(112,240,166,.12)" stroke="#70f0a6" strokeWidth="2.4" strokeDasharray="8 6" />;
+                      figure = <circle className="trainingFigure trainingZone" r="30" fill={objectColor} fillOpacity=".14" stroke={objectColor} strokeWidth="2.4" strokeDasharray="8 6" />;
                     } else if (object.type === "semicircle") {
-                      figure = <path className="trainingFigure trainingZone" d="M-35,16 A35,35 0 0 1 35,16" fill="none" stroke="#c6b9ff" strokeWidth="2.7" strokeDasharray="8 6" />;
+                      figure = <path className="trainingFigure trainingZone" d="M-35,16 A35,35 0 0 1 35,16" fill="none" stroke={objectColor} strokeWidth="2.7" strokeDasharray="8 6" />;
                     }
 
                     return (
@@ -1769,17 +1808,18 @@ export default function Home() {
                     );
                   }
 
-                  const fill = object.team === "blue" ? "#3a8bff" : "#ff5c6c";
+                  const fill = objectColor;
+                  const playerOutline = objectContrast;
                   return (
                     <g key={object.id} data-board-object="true" transform={`translate(${point.x} ${point.y})`} opacity={dimmed ? .48 : 1} onPointerDown={(event) => handleObjectPointerDown(event, object)} onContextMenu={(event) => handleObjectContextMenu(event, object)} style={{ cursor }}>
                       <circle className="touchTarget" r="23" fill="transparent" />
                       {selected && <circle r="19" fill="rgba(247,221,114,.1)" stroke="#f7dd72" strokeWidth="2.5" filter="url(#softGlow)" />}
                       {object.role === "keeper" ? (
-                        <rect x="-12" y="-12" width="24" height="24" rx="6" fill={fill} stroke="#fff" strokeWidth="2.3" />
+                        <rect x="-12" y="-12" width="24" height="24" rx="6" fill={fill} stroke={playerOutline} strokeWidth="2.3" />
                       ) : (
-                        <circle r="12" fill={fill} stroke="#fff" strokeWidth="2.3" />
+                        <circle r="12" fill={fill} stroke={playerOutline} strokeWidth="2.3" />
                       )}
-                      <text y="4" textAnchor="middle" fill="#fff" fontSize="10.5" fontWeight="900" pointerEvents="none">{object.number || "•"}</text>
+                      <text y="4" textAnchor="middle" fill={objectContrast} fontSize="10.5" fontWeight="900" pointerEvents="none">{object.number || "•"}</text>
                       {object.name && <text y="25" textAnchor="middle" fill="#fff" stroke="rgba(0,0,0,.62)" strokeWidth="3" paintOrder="stroke" fontSize="10" fontWeight="800" pointerEvents="none">{object.name}</text>}
                     </g>
                   );
@@ -1887,6 +1927,38 @@ export default function Home() {
 
             {selectedObject ? (
               <div className="inspectorContent">
+                <div className="inspectorGroup colorInspector">
+                  <div className="inspectorGroupTitle">Farge</div>
+                  <div className="lineColorPalette" aria-label="Endre farge på valgt objekt">
+                    {lineColors.map((item) => {
+                      const currentColor = selectedObject.color ?? defaultObjectColor(selectedObject);
+                      return (
+                        <button
+                          key={item.value}
+                          type="button"
+                          className={`lineColorSwatch ${currentColor.toLowerCase() === item.value ? "active" : ""}`}
+                          style={{ "--swatch": item.value } as CSSProperties}
+                          onClick={() => updateSelected({ color: item.value })}
+                          title={item.label}
+                          aria-label={item.label}
+                        />
+                      );
+                    })}
+                    <label className="customColor" title="Velg egen farge">
+                      <span>+</span>
+                      <input
+                        type="color"
+                        value={selectedObject.color ?? defaultObjectColor(selectedObject)}
+                        onChange={(event) => updateSelected({ color: event.target.value })}
+                        aria-label="Egen objektfarge"
+                      />
+                    </label>
+                  </div>
+                  {selectedObject.color && (
+                    <button className="miniButton text" type="button" onClick={() => updateSelected({ color: undefined })}>↺ Standardfarge</button>
+                  )}
+                </div>
+
                 {selectedObject.type === "player" && (
                   <div className="inspectorGroup">
                     <div className="inspectorGroupTitle">Spiller</div>
@@ -1942,6 +2014,38 @@ export default function Home() {
               </div>
             ) : selectedLine ? (
               <div className="inspectorContent">
+                <div className="inspectorGroup colorInspector">
+                  <div className="inspectorGroupTitle">Farge</div>
+                  <div className="lineColorPalette" aria-label="Endre farge på valgt linje">
+                    {lineColors.map((item) => {
+                      const currentColor = selectedLine.color ?? "#ffffff";
+                      return (
+                        <button
+                          key={item.value}
+                          type="button"
+                          className={`lineColorSwatch ${currentColor.toLowerCase() === item.value ? "active" : ""}`}
+                          style={{ "--swatch": item.value } as CSSProperties}
+                          onClick={() => updateSelectedLineColor(item.value)}
+                          title={item.label}
+                          aria-label={item.label}
+                        />
+                      );
+                    })}
+                    <label className="customColor" title="Velg egen farge">
+                      <span>+</span>
+                      <input
+                        type="color"
+                        value={selectedLine.color ?? "#ffffff"}
+                        onChange={(event) => updateSelectedLineColor(event.target.value)}
+                        aria-label="Egen linjefarge"
+                      />
+                    </label>
+                  </div>
+                  {selectedLine.color && (
+                    <button className="miniButton text" type="button" onClick={() => updateSelectedLineColor(undefined)}>↺ Standardfarge</button>
+                  )}
+                </div>
+
                 <div className="inspectorGroup">
                   <div className="inspectorGroupTitle">Valgt linje</div>
                   <p className="inspectorHelp">

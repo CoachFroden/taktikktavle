@@ -444,3 +444,38 @@ button:disabled { opacity: .38; cursor: not-allowed !important; transform: none 
   .animationStepBadge circle { fill: #fff !important; stroke: #000 !important; }
   .animationStepBadge text { fill: #000 !important; }
 }
+
+
+/* clean animation playback controls */
+.lineVisibilityControls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 10px;
+  background: rgba(255,255,255,.035);
+}
+
+.lineVisibilityControls .miniButton {
+  white-space: nowrap;
+}
+
+.lineVisibilityControls .miniButton.active {
+  border-color: rgba(112,240,166,.34);
+  background: rgba(112,240,166,.11);
+  color: #dfffea;
+}
+
+.lineVisibilityControls .miniButton:disabled {
+  opacity: .38;
+  cursor: default;
+}
+
+@media (max-width: 760px) {
+  .lineVisibilityControls {
+    order: 10;
+    width: 100%;
+    justify-content: center;
+  }
+}

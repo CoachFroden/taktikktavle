@@ -370,6 +370,10 @@ export default function Home() {
     () => lines.find((line) => line.id === selectedLineId) ?? null,
     [lines, selectedLineId],
   );
+  const lastAnimatedLine = useMemo(
+    () => [...lines].reverse().find((line) => line.sequenceId && line.animationKind && line.actorId) ?? null,
+    [lines],
+  );
 
   const sceneDuration = useMemo(() => {
     const ends = objects.filter(hasMotion).map((object) => (object.motionStart ?? 0) + (object.motionDuration ?? 2));
@@ -515,6 +519,44 @@ export default function Home() {
     } else {
       setStatus("Rulleringsanimasjon: dra første linje fra spilleren. Nye linjer blir neste steg i rulleringen.");
     }
+  }
+
+  function resumeLineAnimationSequence(sourceLine: BoardLine) {
+    if (!sourceLine.sequenceId || !sourceLine.animationKind || !sourceLine.actorId) {
+      setStatus("Denne linjen tilhører ikke en animasjonssekvens.");
+      return;
+    }
+
+    const sequenceLines = lines
+      .filter((line) => line.sequenceId === sourceLine.sequenceId && line.animationKind && line.actorId)
+      .sort((a, b) => (a.sequenceOrder ?? 0) - (b.sequenceOrder ?? 0));
+
+    const lastLine = sequenceLines[sequenceLines.length - 1];
+    if (!lastLine) {
+      setStatus("Fant ingen steg å fortsette fra.");
+      return;
+    }
+
+    const mode = sourceLine.animationKind;
+    const nextTool = animationToolForMode(mode);
+    if (!nextTool) return;
+
+    stopAnimation(false);
+    cancelFreehand();
+    setLineAnimationMode(mode);
+    setLineAnimationSequenceId(sourceLine.sequenceId);
+    setLineAnimationActorId(sourceLine.actorId);
+    setLineAnimationLastPoint({ ...lastLine.end });
+    setLineAnimationStep(sequenceLines.length);
+    setTool(nextTool);
+    setDrawing(null);
+    setSelectedLineId(null);
+    setSelectedId(mode === "pass" ? null : sourceLine.actorId);
+    setPlayhead(0);
+    setContextMenu(null);
+    setStatus(
+      `Fortsetter sekvensen fra steg ${sequenceLines.length}. Tegn neste linje for å lage steg ${sequenceLines.length + 1}.`,
+    );
   }
 
   function prepareLineDrawing(type: "arrow" | "run" | "rotation", pointerStart: Point, object?: BoardObject): DrawingLine | null {
@@ -785,10 +827,14 @@ export default function Home() {
           }
           if (!actor) return;
 
-          const previousPath = drawing.sequenceOrder && drawing.sequenceOrder > 1 && actor.motionPath && actor.motionPath.length > 1
-            ? [...actor.motionPath]
-            : [drawing.start];
-          const path = [...previousPath, end];
+          const sequenceLines = drawing.sequenceId
+            ? scene.lines
+                .filter((item) => item.sequenceId === drawing.sequenceId && item.animationKind && item.actorId)
+                .sort((a, b) => (a.sequenceOrder ?? 0) - (b.sequenceOrder ?? 0))
+            : [line];
+          const path = sequenceLines.length > 0
+            ? [{ ...sequenceLines[0].start }, ...sequenceLines.map((item) => ({ ...item.end }))]
+            : [drawing.start, end];
 
           actor.x = path[0].x;
           actor.y = path[0].y;
@@ -1515,6 +1561,15 @@ export default function Home() {
                 <option value="run">Løp · valgt spiller følger</option>
                 <option value="rotation">Rullering · valgt spiller følger</option>
               </select>
+              {lineAnimationMode === "off" && lastAnimatedLine && (
+                <button
+                  className="secondaryButton full"
+                  type="button"
+                  onClick={() => resumeLineAnimationSequence(lastAnimatedLine)}
+                >
+                  ↪ Fortsett siste animasjon
+                </button>
+              )}
               {lineAnimationMode !== "off" && (
                 <div className="lineAnimationBuilder">
                   <div>
@@ -2050,9 +2105,14 @@ export default function Home() {
                   <div className="inspectorGroupTitle">Valgt linje</div>
                   <p className="inspectorHelp">
                     {selectedLine.sequenceOrder
-                      ? `Dette er steg ${selectedLine.sequenceOrder} i animasjonssekvensen. Sletter du den, bygges sekvensen opp igjen uten dette steget.`
+                      ? `Dette er steg ${selectedLine.sequenceOrder} i animasjonssekvensen. Du kan fortsette hele sekvensen fra siste steg, eller slette denne linjen.`
                       : "Denne linjen kan slettes uten å påvirke de andre linjene."}
                   </p>
+                  {selectedLine.sequenceId && selectedLine.animationKind && selectedLine.actorId && (
+                    <button className="secondaryButton full" type="button" onClick={() => resumeLineAnimationSequence(selectedLine)}>
+                      ↪ Fortsett denne sekvensen
+                    </button>
+                  )}
                   <button className="secondaryButton full dangerText" type="button" onClick={deleteSelectedLine}>⌫ Slett denne linjen</button>
                 </div>
               </div>

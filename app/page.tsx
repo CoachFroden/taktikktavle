@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  CSSProperties,
   ContextMenuEvent as ReactContextMenuEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
@@ -22,6 +23,7 @@ type Tool =
   | "cone"
   | "arrow"
   | "run"
+  | "rotation"
   | "movement"
   | "freeMovement"
   | "pass";
@@ -43,9 +45,10 @@ type BoardObject = {
 
 type BoardLine = {
   id: string;
-  type: "arrow" | "run";
+  type: "arrow" | "run" | "rotation";
   start: Point;
   end: Point;
+  color?: string;
 };
 
 type Scene = {
@@ -56,7 +59,7 @@ type Scene = {
 };
 
 type DrawingLine = {
-  type: "arrow" | "run";
+  type: "arrow" | "run" | "rotation";
   start: Point;
   current: Point;
 };
@@ -108,6 +111,17 @@ const formations: Formation[] = [
   { id: "121", label: "5er · 1-2-1", pitch: "5er", rows: [1, 2, 1] },
 ];
 
+const lineColors = [
+  { value: "#ffffff", label: "Hvit" },
+  { value: "#111111", label: "Svart" },
+  { value: "#f7dd72", label: "Gul" },
+  { value: "#ff5c6c", label: "Rød" },
+  { value: "#3a8bff", label: "Blå" },
+  { value: "#70f0a6", label: "Grønn" },
+  { value: "#ff9f43", label: "Oransje" },
+  { value: "#c6b9ff", label: "Lilla" },
+];
+
 const toolGroups: Array<{
   title: string;
   items: Array<{ id: Tool; icon: string; label: string; hint: string }>;
@@ -136,8 +150,9 @@ const toolGroups: Array<{
   {
     title: "Tegn",
     items: [
-      { id: "arrow", icon: "➜", label: "Pil", hint: "Retning / pasning" },
-      { id: "run", icon: "⋯", label: "Løp", hint: "Stiplet linje" },
+      { id: "arrow", icon: "➜", label: "Pasning", hint: "Heltrukket pil / pasning" },
+      { id: "run", icon: "⋯", label: "Løp", hint: "Stiplet løpslinje" },
+      { id: "rotation", icon: "↻", label: "Rullering", hint: "Neste stasjon / rullering" },
     ],
   },
 ];
@@ -236,6 +251,7 @@ export default function Home() {
   const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [lineColor, setLineColor] = useState("#ffffff");
   const [status, setStatus] = useState("Velg et verktøy og bygg situasjonen.");
   const [zoom, setZoom] = useState(1);
   const [viewCenter, setViewCenter] = useState<Point>({ x: 500, y: 325 });
@@ -365,8 +381,9 @@ export default function Home() {
       movement: selectedId ? "Trykk på banen der valgt objekt skal ende." : "Velg først en spiller eller ball.",
       freeMovement: selectedId ? "Dra fra valgt objekt og tegn hele bevegelsen." : "Velg først en spiller eller ball.",
       pass: "Trykk først på pasningsspilleren, deretter mottakeren.",
-      arrow: "Dra fra start til slutt for å tegne en pil.",
+      arrow: "Dra fra start til slutt for å tegne en pasningspil.",
       run: "Dra fra start til slutt for å tegne en stiplet løpslinje.",
+      rotation: "Dra fra spiller/stasjon til neste plass i rulleringen.",
     };
     setStatus(messages[nextTool] ?? "Trykk på banen for å plassere objektet.");
   }
@@ -443,7 +460,7 @@ export default function Home() {
       return;
     }
 
-    if (tool === "arrow" || tool === "run") {
+    if (tool === "arrow" || tool === "run" || tool === "rotation") {
       setDrawing({ type: tool, start: point, current: point });
       event.currentTarget.setPointerCapture(event.pointerId);
       return;
@@ -522,7 +539,7 @@ export default function Home() {
     if (drawing) {
       const end = boardPoint(event);
       if (pointDistance(drawing.start, end) > 10) {
-        const line: BoardLine = { id: makeId(), type: drawing.type, start: drawing.start, end };
+        const line: BoardLine = { id: makeId(), type: drawing.type, start: drawing.start, end, color: lineColor };
         mutateCurrentScene((scene) => scene.lines.push(line));
         setStatus("Linje lagt til. Ctrl/Cmd+Z angrer.");
       }
@@ -546,7 +563,7 @@ export default function Home() {
       };
       if (existingBall) Object.assign(existingBall, passPatch);
       else scene.objects.push({ id: makeId(), type: "ball", x: from.x, y: from.y, ...passPatch });
-      scene.lines.push({ id: makeId(), type: "arrow", start: { x: from.x, y: from.y }, end: { x: to.x, y: to.y } });
+      scene.lines.push({ id: makeId(), type: "arrow", start: { x: from.x, y: from.y }, end: { x: to.x, y: to.y }, color: lineColor });
     });
     setPassFromId(null);
     setPlayhead(0);
@@ -558,11 +575,17 @@ export default function Home() {
     setContextMenu(null);
     setSelectedId(object.id);
 
-    if (tool === "arrow" || tool === "run") {
+    if (tool === "arrow" || tool === "run" || tool === "rotation") {
       const start = { x: object.x, y: object.y };
       setDrawing({ type: tool, start, current: start });
       event.currentTarget.setPointerCapture(event.pointerId);
-      setStatus(tool === "arrow" ? "Dra pilen til ønsket sluttpunkt." : "Dra løpslinjen til ønsket sluttpunkt.");
+      setStatus(
+        tool === "arrow"
+          ? "Dra pasningspilen til ønsket sluttpunkt."
+          : tool === "rotation"
+            ? "Dra rulleringslinjen til neste stasjon/plass."
+            : "Dra løpslinjen til ønsket sluttpunkt.",
+      );
       return;
     }
 
@@ -992,15 +1015,15 @@ export default function Home() {
             <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
         </defs>
-        <rect x="0" y="0" width="1000" height="650" fill="url(#pitchGlow)" />
+        <rect className="pitchBackground" x="0" y="0" width="1000" height="650" fill="url(#pitchGlow)" />
         {Array.from({ length: 10 }).map((_, index) => (
-          <rect key={index} x={index * 100} y="0" width="100" height="650" fill={index % 2 === 0 ? "rgba(255,255,255,.026)" : "rgba(0,0,0,.026)"} />
+          <rect className="pitchStripe" key={index} x={index * 100} y="0" width="100" height="650" fill={index % 2 === 0 ? "rgba(255,255,255,.026)" : "rgba(0,0,0,.026)"} />
         ))}
-        <g opacity=".16" stroke="#d8ffe6" strokeWidth="1">
+        <g className="pitchGrid" opacity=".16" stroke="#d8ffe6" strokeWidth="1">
           {Array.from({ length: 20 }).map((_, index) => <line key={`v-${index}`} x1={index * 50} y1="0" x2={index * 50} y2="650" />)}
           {Array.from({ length: 13 }).map((_, index) => <line key={`h-${index}`} x1="0" y1={index * 50} x2="1000" y2={index * 50} />)}
         </g>
-        <g fill="none" stroke="rgba(255,255,255,.9)" strokeWidth="3.5">
+        <g className="pitchMarkings" fill="none" stroke="rgba(255,255,255,.9)" strokeWidth="3.5">
           <rect x="30" y="30" width="940" height="590" rx="3" />
           <line x1="500" y1="30" x2="500" y2="620" />
           <circle cx="500" cy="325" r={config.centerRadius} />
@@ -1011,7 +1034,7 @@ export default function Home() {
           <rect x="14" y="276" width="16" height="98" strokeWidth="3" />
           <rect x="970" y="276" width="16" height="98" strokeWidth="3" />
         </g>
-        <g fill="rgba(255,255,255,.95)">
+        <g className="pitchDots" fill="rgba(255,255,255,.95)">
           <circle cx="500" cy="325" r="4" />
           <circle cx={30 + config.penaltyDepth * 0.68} cy="325" r="4" />
           <circle cx={970 - config.penaltyDepth * 0.68} cy="325" r="4" />
@@ -1093,6 +1116,7 @@ export default function Home() {
             <span className="headerDivider" />
             <button className="ghostButton" type="button" onClick={loadBoard}>Åpne</button>
             <button className="ghostButton" type="button" onClick={exportPng}>Eksporter PNG</button>
+            <button className="ghostButton" type="button" onClick={() => window.print()}>⌁ Skriv ut</button>
             <button className="ghostButton" type="button" onClick={() => setPresentationMode(true)}>◱ Presenter</button>
             <button className="primaryButton" type="button" onClick={saveBoard}>Lagre</button>
           </div>
@@ -1121,6 +1145,28 @@ export default function Home() {
                 </div>
               </section>
             ))}
+
+            <section className="toolSection lineColorSection">
+              <div className="sectionLabel">Linjefarge</div>
+              <div className="lineColorPalette" aria-label="Velg linjefarge">
+                {lineColors.map((item) => (
+                  <button
+                    key={item.value}
+                    type="button"
+                    className={`lineColorSwatch ${lineColor.toLowerCase() === item.value ? "active" : ""}`}
+                    style={{ "--swatch": item.value } as CSSProperties}
+                    onClick={() => setLineColor(item.value)}
+                    title={item.label}
+                    aria-label={item.label}
+                  />
+                ))}
+                <label className="customColor" title="Velg egen farge">
+                  <span>+</span>
+                  <input type="color" value={lineColor} onChange={(event) => setLineColor(event.target.value)} aria-label="Egen linjefarge" />
+                </label>
+              </div>
+              <small className="lineColorHint">Brukes på nye pasnings-, løps- og rulleringslinjer.</small>
+            </section>
 
             <section className="toolSection formationSection">
               <div className="sectionLabel">Startformasjon</div>
@@ -1181,31 +1227,53 @@ export default function Home() {
               >
                 <defs>
                   <marker id="arrowHead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                    <path d="M0 0 L10 5 L0 10Z" fill="#fff" />
+                    <path d="M0 0 L10 5 L0 10Z" fill="context-stroke" />
                   </marker>
                 </defs>
 
                 {renderPitch()}
 
-                {lines.map((line) => (
-                  <line
-                    key={line.id}
-                    x1={line.start.x} y1={line.start.y} x2={line.end.x} y2={line.end.y}
-                    stroke="#fff" strokeWidth="5" strokeLinecap="round"
-                    strokeDasharray={line.type === "run" ? "11 10" : undefined}
-                    markerEnd={line.type === "arrow" ? "url(#arrowHead)" : undefined}
-                    opacity=".88"
-                  />
-                ))}
+                {lines.map((line) => {
+                  const color = line.color ?? "#ffffff";
+                  const isWhite = color.toLowerCase() === "#ffffff" || color.toLowerCase() === "#fff";
+                  const midX = (line.start.x + line.end.x) / 2;
+                  const midY = (line.start.y + line.end.y) / 2;
+                  return (
+                    <g key={line.id}>
+                      <line
+                        className={`tacticLine ${isWhite ? "whiteLine" : ""}`}
+                        x1={line.start.x} y1={line.start.y} x2={line.end.x} y2={line.end.y}
+                        stroke={color} strokeWidth="5" strokeLinecap="round"
+                        strokeDasharray={line.type === "run" ? "11 10" : line.type === "rotation" ? "4 7 18 7" : undefined}
+                        markerEnd={line.type === "arrow" || line.type === "rotation" ? "url(#arrowHead)" : undefined}
+                        opacity=".9"
+                      />
+                      {line.type === "rotation" && (
+                        <g className="rotationBadge" transform={`translate(${midX} ${midY})`}>
+                          <circle r="11" fill="#081511" stroke={color} strokeWidth="2.5" />
+                          <text y="4" textAnchor="middle" fill={color} fontSize="11" fontWeight="950">R</text>
+                        </g>
+                      )}
+                    </g>
+                  );
+                })}
 
                 {drawing && (
-                  <line
-                    x1={drawing.start.x} y1={drawing.start.y} x2={drawing.current.x} y2={drawing.current.y}
-                    stroke="#f7dd72" strokeWidth="5" strokeLinecap="round"
-                    strokeDasharray={drawing.type === "run" ? "11 10" : undefined}
-                    markerEnd={drawing.type === "arrow" ? "url(#arrowHead)" : undefined}
-                    opacity=".95"
-                  />
+                  <g>
+                    <line
+                      x1={drawing.start.x} y1={drawing.start.y} x2={drawing.current.x} y2={drawing.current.y}
+                      stroke={lineColor} strokeWidth="5" strokeLinecap="round"
+                      strokeDasharray={drawing.type === "run" ? "11 10" : drawing.type === "rotation" ? "4 7 18 7" : undefined}
+                      markerEnd={drawing.type === "arrow" || drawing.type === "rotation" ? "url(#arrowHead)" : undefined}
+                      opacity=".96"
+                    />
+                    {drawing.type === "rotation" && (
+                      <g transform={`translate(${(drawing.start.x + drawing.current.x) / 2} ${(drawing.start.y + drawing.current.y) / 2})`}>
+                        <circle r="11" fill="#081511" stroke={lineColor} strokeWidth="2.5" />
+                        <text y="4" textAnchor="middle" fill={lineColor} fontSize="11" fontWeight="950">R</text>
+                      </g>
+                    )}
+                  </g>
                 )}
 
                 {objects.map((object) => object.target && (

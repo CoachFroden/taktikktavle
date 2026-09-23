@@ -24,6 +24,7 @@ type ObjectType =
   | "semicircle";
 type PitchType = "11er" | "9er" | "7er" | "5er";
 type PitchView = "full" | "half" | "third" | "box";
+type LineAnimationMode = "off" | "pass" | "run" | "rotation";
 type Tool =
   | "select"
   | "hand"
@@ -71,6 +72,10 @@ type BoardLine = {
   start: Point;
   end: Point;
   color?: string;
+  sequenceId?: string;
+  sequenceOrder?: number;
+  animationKind?: Exclude<LineAnimationMode, "off">;
+  actorId?: string;
 };
 
 type Scene = {
@@ -84,6 +89,10 @@ type DrawingLine = {
   type: "arrow" | "run" | "rotation";
   start: Point;
   current: Point;
+  sequenceId?: string;
+  sequenceOrder?: number;
+  animationKind?: Exclude<LineAnimationMode, "off">;
+  actorId?: string;
 };
 
 type FreehandDrawing = {
@@ -305,6 +314,11 @@ export default function Home() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [lineColor, setLineColor] = useState("#ffffff");
+  const [lineAnimationMode, setLineAnimationMode] = useState<LineAnimationMode>("off");
+  const [lineAnimationSequenceId, setLineAnimationSequenceId] = useState(() => makeId());
+  const [lineAnimationActorId, setLineAnimationActorId] = useState<string | null>(null);
+  const [lineAnimationLastPoint, setLineAnimationLastPoint] = useState<Point | null>(null);
+  const [lineAnimationStep, setLineAnimationStep] = useState(0);
   const [status, setStatus] = useState("Velg et verktøy og bygg situasjonen.");
   const [zoom, setZoom] = useState(1);
   const [viewCenter, setViewCenter] = useState<Point>({ x: 500, y: 325 });
@@ -420,11 +434,116 @@ export default function Home() {
     setFreehandPreview([]);
   }
 
+  function animationToolForMode(mode: LineAnimationMode): Tool | null {
+    if (mode === "pass") return "arrow";
+    if (mode === "run") return "run";
+    if (mode === "rotation") return "rotation";
+    return null;
+  }
+
+  function resetLineAnimationSequence(message = true) {
+    setLineAnimationSequenceId(makeId());
+    setLineAnimationActorId(null);
+    setLineAnimationLastPoint(null);
+    setLineAnimationStep(0);
+    setPlayhead(0);
+    if (message && lineAnimationMode !== "off") {
+      setStatus(
+        lineAnimationMode === "pass"
+          ? "Ny pasningssekvens: tegn linje 1. Ballen opprettes automatisk."
+          : "Ny bevegelsessekvens: start ved spilleren som skal følge linjene.",
+      );
+    }
+  }
+
+  function changeLineAnimationMode(mode: LineAnimationMode) {
+    stopAnimation(false);
+    cancelFreehand();
+    setLineAnimationMode(mode);
+    setLineAnimationSequenceId(makeId());
+    setLineAnimationActorId(null);
+    setLineAnimationLastPoint(null);
+    setLineAnimationStep(0);
+    setDrawing(null);
+    setPlayhead(0);
+
+    const nextTool = animationToolForMode(mode);
+    if (nextTool) setTool(nextTool);
+
+    if (mode === "off") {
+      setStatus("Linjeanimasjon er av. Linjene tegnes som vanlige taktiske markeringer.");
+    } else if (mode === "pass") {
+      setStatus("Pasningsanimasjon: tegn linje 1. Ballen opprettes automatisk og følger linjene i rekkefølge.");
+    } else if (mode === "run") {
+      setStatus("Løpsanimasjon: dra første linje fra spilleren som skal løpe. Nye linjer blir steg 2, 3 osv.");
+    } else {
+      setStatus("Rulleringsanimasjon: dra første linje fra spilleren. Nye linjer blir neste steg i rulleringen.");
+    }
+  }
+
+  function prepareLineDrawing(type: "arrow" | "run" | "rotation", pointerStart: Point, object?: BoardObject): DrawingLine | null {
+    const modeTool = animationToolForMode(lineAnimationMode);
+    const animated = lineAnimationMode !== "off" && modeTool === type;
+
+    if (!animated) return { type, start: pointerStart, current: pointerStart };
+
+    let actorId = lineAnimationActorId;
+    let start = lineAnimationLastPoint ?? pointerStart;
+
+    if (lineAnimationMode === "pass") {
+      if (!actorId) {
+        const existingBall = objects.find((item) => item.type === "ball");
+        actorId = existingBall?.id ?? makeId();
+      }
+      if (!lineAnimationLastPoint && object) start = { x: object.x, y: object.y };
+    } else {
+      if (!actorId) {
+        const candidate = object?.type === "player"
+          ? object
+          : objects.find((item) => item.id === selectedId && item.type === "player");
+        if (!candidate) {
+          setStatus("Velg spilleren som skal følge løps-/rulleringssekvensen, eller start linjen direkte fra spilleren.");
+          return null;
+        }
+        actorId = candidate.id;
+        start = { x: candidate.x, y: candidate.y };
+      }
+    }
+
+    setLineAnimationActorId(actorId);
+    const order = lineAnimationStep + 1;
+    setStatus(`Tegner steg ${order}. Slipp for å lagre, tegn deretter neste linje.`);
+
+    return {
+      type,
+      start,
+      current: start,
+      sequenceId: lineAnimationSequenceId,
+      sequenceOrder: order,
+      animationKind: lineAnimationMode as Exclude<LineAnimationMode, "off">,
+      actorId,
+    };
+  }
+
+  function lineAnimationDuration(kind: Exclude<LineAnimationMode, "off">, path: Point[]) {
+    const distance = pathLength(path);
+    const unitsPerSecond = kind === "pass" ? 260 : kind === "run" ? 115 : 95;
+    const minimum = kind === "pass" ? 0.35 : 0.55;
+    return Math.max(minimum, distance / unitsPerSecond);
+  }
+
   function chooseTool(nextTool: Tool) {
     stopAnimation(false);
     cancelFreehand();
     setTool(nextTool);
     setDrawing(null);
+    const activeAnimationTool = animationToolForMode(lineAnimationMode);
+    if (lineAnimationMode !== "off" && nextTool !== activeAnimationTool) {
+      setLineAnimationMode("off");
+      setLineAnimationActorId(null);
+      setLineAnimationLastPoint(null);
+      setLineAnimationStep(0);
+    }
     setContextMenu(null);
     if (nextTool !== "pass") setPassFromId(null);
 
@@ -522,7 +641,9 @@ export default function Home() {
     }
 
     if (tool === "arrow" || tool === "run" || tool === "rotation") {
-      setDrawing({ type: tool, start: point, current: point });
+      const prepared = prepareLineDrawing(tool, point);
+      if (!prepared) return;
+      setDrawing(prepared);
       event.currentTarget.setPointerCapture(event.pointerId);
       return;
     }
@@ -600,9 +721,53 @@ export default function Home() {
     if (drawing) {
       const end = boardPoint(event);
       if (pointDistance(drawing.start, end) > 10) {
-        const line: BoardLine = { id: makeId(), type: drawing.type, start: drawing.start, end, color: lineColor };
-        mutateCurrentScene((scene) => scene.lines.push(line));
-        setStatus("Linje lagt til. Ctrl/Cmd+Z angrer.");
+        const line: BoardLine = {
+          id: makeId(),
+          type: drawing.type,
+          start: drawing.start,
+          end,
+          color: lineColor,
+          sequenceId: drawing.sequenceId,
+          sequenceOrder: drawing.sequenceOrder,
+          animationKind: drawing.animationKind,
+          actorId: drawing.actorId,
+        };
+
+        mutateCurrentScene((scene) => {
+          scene.lines.push(line);
+
+          if (!drawing.animationKind || !drawing.actorId) return;
+
+          let actor = scene.objects.find((object) => object.id === drawing.actorId);
+          if (!actor && drawing.animationKind === "pass") {
+            actor = { id: drawing.actorId, type: "ball", x: drawing.start.x, y: drawing.start.y };
+            scene.objects.push(actor);
+          }
+          if (!actor) return;
+
+          const previousPath = drawing.sequenceOrder && drawing.sequenceOrder > 1 && actor.motionPath && actor.motionPath.length > 1
+            ? [...actor.motionPath]
+            : [drawing.start];
+          const path = [...previousPath, end];
+
+          actor.x = path[0].x;
+          actor.y = path[0].y;
+          actor.target = undefined;
+          actor.motionPath = path;
+          actor.motionStart = 0;
+          actor.motionDuration = lineAnimationDuration(drawing.animationKind, path);
+        });
+
+        if (drawing.animationKind) {
+          setLineAnimationLastPoint(end);
+          setLineAnimationStep(drawing.sequenceOrder ?? lineAnimationStep + 1);
+          setPlayhead(0);
+          setStatus(
+            `Steg ${drawing.sequenceOrder ?? lineAnimationStep + 1} lagret. Tegn neste linje for å legge til neste steg, eller trykk Play.`,
+          );
+        } else {
+          setStatus("Linje lagt til. Ctrl/Cmd+Z angrer.");
+        }
       }
       setDrawing(null);
     }
@@ -638,15 +803,19 @@ export default function Home() {
 
     if (tool === "arrow" || tool === "run" || tool === "rotation") {
       const start = { x: object.x, y: object.y };
-      setDrawing({ type: tool, start, current: start });
+      const prepared = prepareLineDrawing(tool, start, object);
+      if (!prepared) return;
+      setDrawing(prepared);
       event.currentTarget.setPointerCapture(event.pointerId);
-      setStatus(
-        tool === "arrow"
-          ? "Dra pasningspilen til ønsket sluttpunkt."
-          : tool === "rotation"
-            ? "Dra rulleringslinjen til neste stasjon/plass."
-            : "Dra løpslinjen til ønsket sluttpunkt.",
-      );
+      if (!prepared.animationKind) {
+        setStatus(
+          tool === "arrow"
+            ? "Dra pasningspilen til ønsket sluttpunkt."
+            : tool === "rotation"
+              ? "Dra rulleringslinjen til neste stasjon/plass."
+              : "Dra løpslinjen til ønsket sluttpunkt.",
+        );
+      }
       return;
     }
 
@@ -944,6 +1113,10 @@ export default function Home() {
 
   function selectScene(index: number) {
     if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
+    setLineAnimationSequenceId(makeId());
+    setLineAnimationActorId(null);
+    setLineAnimationLastPoint(null);
+    setLineAnimationStep(0);
     animationRef.current = null;
     sequenceRef.current = false;
     setIsPlaying(false);
@@ -1207,6 +1380,34 @@ export default function Home() {
               </section>
             ))}
 
+            <section className="toolSection animationLineSection">
+              <div className="sectionLabel">Animasjon fra linjer</div>
+              <select className="darkSelect" value={lineAnimationMode} onChange={(event) => changeLineAnimationMode(event.target.value as LineAnimationMode)}>
+                <option value="off">Av · vanlig tegning</option>
+                <option value="pass">Pasning · ball følger linjene</option>
+                <option value="run">Løp · valgt spiller følger</option>
+                <option value="rotation">Rullering · valgt spiller følger</option>
+              </select>
+              {lineAnimationMode !== "off" && (
+                <div className="lineAnimationBuilder">
+                  <div>
+                    <strong>Steg {lineAnimationStep + 1}</strong>
+                    <span>
+                      {lineAnimationMode === "pass"
+                        ? "Ball"
+                        : lineAnimationActorId
+                          ? motionLabel(objects.find((object) => object.id === lineAnimationActorId) ?? { id: "", type: "player", x: 0, y: 0, team: "blue" })
+                          : "Velg spiller"}
+                    </span>
+                  </div>
+                  <button className="miniButton text" type="button" onClick={() => resetLineAnimationSequence()}>＋ Ny sekvens</button>
+                </div>
+              )}
+              <small className="lineColorHint">
+                Nye linjer blir automatisk steg 1, 2, 3 … og spilles i samme rekkefølge.
+              </small>
+            </section>
+
             <section className="toolSection lineColorSection">
               <div className="sectionLabel">Linjefarge</div>
               <div className="lineColorPalette" aria-label="Velg linjefarge">
@@ -1309,12 +1510,17 @@ export default function Home() {
                         markerEnd={line.type === "arrow" || line.type === "rotation" ? "url(#arrowHead)" : undefined}
                         opacity=".9"
                       />
-                      {line.type === "rotation" && (
+                      {line.sequenceOrder ? (
+                        <g className="animationStepBadge" transform={`translate(${midX} ${midY})`}>
+                          <circle r="12" fill="#081511" stroke={color} strokeWidth="2.5" />
+                          <text y="4" textAnchor="middle" fill={color} fontSize="11" fontWeight="950">{line.sequenceOrder}</text>
+                        </g>
+                      ) : line.type === "rotation" ? (
                         <g className="rotationBadge" transform={`translate(${midX} ${midY})`}>
                           <circle r="11" fill="#081511" stroke={color} strokeWidth="2.5" />
                           <text y="4" textAnchor="middle" fill={color} fontSize="11" fontWeight="950">R</text>
                         </g>
-                      )}
+                      ) : null}
                     </g>
                   );
                 })}
@@ -1328,12 +1534,17 @@ export default function Home() {
                       markerEnd={drawing.type === "arrow" || drawing.type === "rotation" ? "url(#arrowHead)" : undefined}
                       opacity=".96"
                     />
-                    {drawing.type === "rotation" && (
+                    {drawing.sequenceOrder ? (
+                      <g transform={`translate(${(drawing.start.x + drawing.current.x) / 2} ${(drawing.start.y + drawing.current.y) / 2})`}>
+                        <circle r="12" fill="#081511" stroke={lineColor} strokeWidth="2.5" />
+                        <text y="4" textAnchor="middle" fill={lineColor} fontSize="11" fontWeight="950">{drawing.sequenceOrder}</text>
+                      </g>
+                    ) : drawing.type === "rotation" ? (
                       <g transform={`translate(${(drawing.start.x + drawing.current.x) / 2} ${(drawing.start.y + drawing.current.y) / 2})`}>
                         <circle r="11" fill="#081511" stroke={lineColor} strokeWidth="2.5" />
                         <text y="4" textAnchor="middle" fill={lineColor} fontSize="11" fontWeight="950">R</text>
                       </g>
-                    )}
+                    ) : null}
                   </g>
                 )}
 

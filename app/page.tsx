@@ -305,6 +305,7 @@ export default function Home() {
   const [scenes, setScenes] = useState<Scene[]>([createEmptyScene()]);
   const [sceneIndex, setSceneIndex] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [drawing, setDrawing] = useState<DrawingLine | null>(null);
   const [freehandPreview, setFreehandPreview] = useState<Point[]>([]);
@@ -335,6 +336,10 @@ export default function Home() {
   const selectedObject = useMemo(
     () => objects.find((object) => object.id === selectedId) ?? null,
     [objects, selectedId],
+  );
+  const selectedLine = useMemo(
+    () => lines.find((line) => line.id === selectedLineId) ?? null,
+    [lines, selectedLineId],
   );
 
   const sceneDuration = useMemo(() => {
@@ -383,6 +388,7 @@ export default function Home() {
     setScenes(clone(previous));
     setSceneIndex((current) => Math.min(current, previous.length - 1));
     setSelectedId(null);
+    setSelectedLineId(null);
     setContextMenu(null);
     setPlayhead(0);
     setStatus("Angret siste endring.");
@@ -396,6 +402,7 @@ export default function Home() {
     setScenes(clone(next));
     setSceneIndex((current) => Math.min(current, next.length - 1));
     setSelectedId(null);
+    setSelectedLineId(null);
     setContextMenu(null);
     setPlayhead(0);
     setStatus("Gjorde om endringen igjen.");
@@ -537,6 +544,7 @@ export default function Home() {
     cancelFreehand();
     setTool(nextTool);
     setDrawing(null);
+    if (nextTool !== "select") setSelectedLineId(null);
     const activeAnimationTool = animationToolForMode(lineAnimationMode);
     if (lineAnimationMode !== "off" && nextTool !== activeAnimationTool) {
       setLineAnimationMode("off");
@@ -648,7 +656,10 @@ export default function Home() {
       return;
     }
 
-    if (tool === "select") setSelectedId(null);
+    if (tool === "select") {
+      setSelectedId(null);
+      setSelectedLineId(null);
+    }
   }
 
   function handleBoardPointerMove(event: ReactPointerEvent<SVGSVGElement>) {
@@ -800,6 +811,7 @@ export default function Home() {
     event.stopPropagation();
     setContextMenu(null);
     setSelectedId(object.id);
+    setSelectedLineId(null);
 
     if (tool === "arrow" || tool === "run" || tool === "rotation") {
       const start = { x: object.x, y: object.y };
@@ -1039,7 +1051,77 @@ export default function Home() {
     };
     mutateCurrentScene((scene) => scene.objects.push(duplicate));
     setSelectedId(duplicate.id);
+    setSelectedLineId(null);
     setStatus("Objekt duplisert.");
+  }
+
+  function rebuildAnimatedSequence(scene: Scene, sequenceId: string) {
+    const sequenceLines = scene.lines
+      .filter((line) => line.sequenceId === sequenceId && line.animationKind && line.actorId)
+      .sort((a, b) => (a.sequenceOrder ?? 0) - (b.sequenceOrder ?? 0));
+
+    if (sequenceLines.length === 0) return;
+
+    const actorId = sequenceLines[0].actorId;
+    const kind = sequenceLines[0].animationKind;
+    if (!actorId || !kind) return;
+
+    sequenceLines.forEach((line, index) => {
+      line.sequenceOrder = index + 1;
+      if (index > 0) line.start = { ...sequenceLines[index - 1].end };
+    });
+
+    const actor = scene.objects.find((object) => object.id === actorId);
+    if (!actor) return;
+
+    const path = [{ ...sequenceLines[0].start }, ...sequenceLines.map((line) => ({ ...line.end }))];
+    actor.x = path[0].x;
+    actor.y = path[0].y;
+    actor.target = undefined;
+    actor.motionPath = path;
+    actor.motionStart = 0;
+    actor.motionDuration = lineAnimationDuration(kind, path);
+  }
+
+  function deleteSelectedLine() {
+    if (!selectedLineId) return;
+    const lineToDelete = lines.find((line) => line.id === selectedLineId);
+    mutateCurrentScene((scene) => {
+      scene.lines = scene.lines.filter((line) => line.id !== selectedLineId);
+
+      if (lineToDelete?.sequenceId && lineToDelete.actorId && lineToDelete.animationKind) {
+        const remaining = scene.lines.filter((line) => line.sequenceId === lineToDelete.sequenceId);
+        if (remaining.length > 0) {
+          rebuildAnimatedSequence(scene, lineToDelete.sequenceId);
+        } else {
+          const actor = scene.objects.find((object) => object.id === lineToDelete.actorId);
+          if (actor) {
+            actor.target = undefined;
+            actor.motionPath = undefined;
+            actor.motionStart = undefined;
+            actor.motionDuration = undefined;
+          }
+        }
+      }
+    });
+    setSelectedLineId(null);
+    setPlayhead(0);
+    setLineAnimationLastPoint(null);
+    setLineAnimationStep(0);
+    setStatus("Linjen er slettet.");
+  }
+
+  function handleLinePointerDown(event: ReactPointerEvent<SVGLineElement>, line: BoardLine) {
+    if (tool !== "select") return;
+    event.stopPropagation();
+    setSelectedLineId(line.id);
+    setSelectedId(null);
+    setContextMenu(null);
+    setStatus(
+      line.sequenceOrder
+        ? `Steg ${line.sequenceOrder} valgt. Trykk Slett eller Delete/Backspace for å fjerne bare denne linjen.`
+        : "Linje valgt. Trykk Slett eller Delete/Backspace.",
+    );
   }
 
   function deleteSelected() {
@@ -1048,6 +1130,7 @@ export default function Home() {
       scene.objects = scene.objects.filter((object) => object.id !== selectedId);
     });
     setSelectedId(null);
+    setSelectedLineId(null);
     setContextMenu(null);
     setStatus("Objekt slettet.");
   }
@@ -1058,6 +1141,7 @@ export default function Home() {
     setScenes([createEmptyScene()]);
     setSceneIndex(0);
     setSelectedId(null);
+    setSelectedLineId(null);
     setPlayhead(0);
     setStatus("Prosjektet er tømt.");
   }
@@ -1084,6 +1168,7 @@ export default function Home() {
     mutateScenes((draft) => draft.splice(sceneIndex + 1, 0, newScene));
     setSceneIndex(sceneIndex + 1);
     setSelectedId(null);
+    setSelectedLineId(null);
     setPlayhead(0);
     setStatus("Ny scene opprettet fra sluttposisjonene.");
   }
@@ -1095,6 +1180,7 @@ export default function Home() {
     mutateScenes((draft) => draft.splice(sceneIndex + 1, 0, copy));
     setSceneIndex(sceneIndex + 1);
     setSelectedId(null);
+    setSelectedLineId(null);
     setPlayhead(0);
     setStatus("Scenen er duplisert.");
   }
@@ -1122,6 +1208,7 @@ export default function Home() {
     setIsPlaying(false);
     setSceneIndex(index);
     setSelectedId(null);
+    setSelectedLineId(null);
     setPlayhead(0);
     setContextMenu(null);
   }
@@ -1305,7 +1392,10 @@ export default function Home() {
       }
       if (editable) return;
       if (event.key === "Delete" || event.key === "Backspace") {
-        if (selectedId) {
+        if (selectedLineId) {
+          event.preventDefault();
+          deleteSelectedLine();
+        } else if (selectedId) {
           event.preventDefault();
           deleteSelected();
         }
@@ -1327,7 +1417,7 @@ export default function Home() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, historyPast, historyFuture, playhead, isPlaying, sceneDuration, scenes, sceneIndex]);
+  }, [selectedId, selectedLineId, historyPast, historyFuture, playhead, isPlaying, sceneDuration, scenes, sceneIndex]);
 
   useEffect(() => () => {
     if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
@@ -1488,7 +1578,7 @@ export default function Home() {
                 onPointerCancel={() => { setDraggingId(null); setDrawing(null); cancelFreehand(); panDragRef.current = null; }}
               >
                 <defs>
-                  <marker id="arrowHead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <marker id="arrowHead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="3.8" markerHeight="3.8" orient="auto-start-reverse">
                     <path d="M0 0 L10 5 L0 10Z" fill="context-stroke" />
                   </marker>
                 </defs>
@@ -1503,22 +1593,37 @@ export default function Home() {
                   return (
                     <g key={line.id}>
                       <line
+                        className="lineHitArea"
+                        x1={line.start.x} y1={line.start.y} x2={line.end.x} y2={line.end.y}
+                        stroke="transparent" strokeWidth="18" strokeLinecap="round"
+                        pointerEvents={tool === "select" ? "stroke" : "none"}
+                        onPointerDown={(event) => handleLinePointerDown(event, line)}
+                      />
+                      {selectedLineId === line.id && (
+                        <line
+                          x1={line.start.x} y1={line.start.y} x2={line.end.x} y2={line.end.y}
+                          stroke="#f7dd72" strokeWidth="6" strokeLinecap="round" opacity=".28"
+                          pointerEvents="none"
+                        />
+                      )}
+                      <line
                         className={`tacticLine ${isWhite ? "whiteLine" : ""}`}
                         x1={line.start.x} y1={line.start.y} x2={line.end.x} y2={line.end.y}
-                        stroke={color} strokeWidth="5" strokeLinecap="round"
-                        strokeDasharray={line.type === "run" ? "11 10" : line.type === "rotation" ? "4 7 18 7" : undefined}
+                        stroke={color} strokeWidth="2.3" strokeLinecap="round"
+                        strokeDasharray={line.type === "run" ? "8 7" : line.type === "rotation" ? "3 6 13 6" : undefined}
                         markerEnd={line.type === "arrow" || line.type === "rotation" ? "url(#arrowHead)" : undefined}
-                        opacity=".9"
+                        opacity=".92"
+                        pointerEvents="none"
                       />
                       {line.sequenceOrder ? (
                         <g className="animationStepBadge" transform={`translate(${midX} ${midY})`}>
-                          <circle r="12" fill="#081511" stroke={color} strokeWidth="2.5" />
-                          <text y="4" textAnchor="middle" fill={color} fontSize="11" fontWeight="950">{line.sequenceOrder}</text>
+                          <circle r="9" fill="#081511" stroke={color} strokeWidth="1.8" />
+                          <text y="3.4" textAnchor="middle" fill={color} fontSize="8.5" fontWeight="950">{line.sequenceOrder}</text>
                         </g>
                       ) : line.type === "rotation" ? (
                         <g className="rotationBadge" transform={`translate(${midX} ${midY})`}>
-                          <circle r="11" fill="#081511" stroke={color} strokeWidth="2.5" />
-                          <text y="4" textAnchor="middle" fill={color} fontSize="11" fontWeight="950">R</text>
+                          <circle r="8.5" fill="#081511" stroke={color} strokeWidth="1.8" />
+                          <text y="3.2" textAnchor="middle" fill={color} fontSize="8" fontWeight="950">R</text>
                         </g>
                       ) : null}
                     </g>
@@ -1529,20 +1634,20 @@ export default function Home() {
                   <g>
                     <line
                       x1={drawing.start.x} y1={drawing.start.y} x2={drawing.current.x} y2={drawing.current.y}
-                      stroke={lineColor} strokeWidth="5" strokeLinecap="round"
-                      strokeDasharray={drawing.type === "run" ? "11 10" : drawing.type === "rotation" ? "4 7 18 7" : undefined}
+                      stroke={lineColor} strokeWidth="2.3" strokeLinecap="round"
+                      strokeDasharray={drawing.type === "run" ? "8 7" : drawing.type === "rotation" ? "3 6 13 6" : undefined}
                       markerEnd={drawing.type === "arrow" || drawing.type === "rotation" ? "url(#arrowHead)" : undefined}
                       opacity=".96"
                     />
                     {drawing.sequenceOrder ? (
                       <g transform={`translate(${(drawing.start.x + drawing.current.x) / 2} ${(drawing.start.y + drawing.current.y) / 2})`}>
-                        <circle r="12" fill="#081511" stroke={lineColor} strokeWidth="2.5" />
-                        <text y="4" textAnchor="middle" fill={lineColor} fontSize="11" fontWeight="950">{drawing.sequenceOrder}</text>
+                        <circle r="9" fill="#081511" stroke={lineColor} strokeWidth="1.8" />
+                        <text y="3.4" textAnchor="middle" fill={lineColor} fontSize="8.5" fontWeight="950">{drawing.sequenceOrder}</text>
                       </g>
                     ) : drawing.type === "rotation" ? (
                       <g transform={`translate(${(drawing.start.x + drawing.current.x) / 2} ${(drawing.start.y + drawing.current.y) / 2})`}>
-                        <circle r="11" fill="#081511" stroke={lineColor} strokeWidth="2.5" />
-                        <text y="4" textAnchor="middle" fill={lineColor} fontSize="11" fontWeight="950">R</text>
+                        <circle r="8.5" fill="#081511" stroke={lineColor} strokeWidth="1.8" />
+                        <text y="3.2" textAnchor="middle" fill={lineColor} fontSize="8" fontWeight="950">R</text>
                       </g>
                     ) : null}
                   </g>
@@ -1764,16 +1869,40 @@ export default function Home() {
         {!presentationMode && (
           <aside className="glassPanel inspectorPanel">
             <div className="inspectorHeader">
-              <div><span className="sectionLabel">Inspektør</span><strong>{selectedObject ? motionLabel(selectedObject) : "Ingen valgt"}</strong></div>
+              <div>
+                <span className="sectionLabel">Inspektør</span>
+                <strong>
+                  {selectedObject
+                    ? motionLabel(selectedObject)
+                    : selectedLine
+                      ? selectedLine.sequenceOrder
+                        ? `Linje · steg ${selectedLine.sequenceOrder}`
+                        : "Linje"
+                      : "Ingen valgt"}
+                </strong>
+              </div>
               {selectedObject && <span className={`teamChip ${selectedObject.team ?? "neutral"}`}>{selectedObject.type === "player" ? (selectedObject.team === "blue" ? "BLÅ" : "RØD") : selectedObject.type.toUpperCase()}</span>}
+              {selectedLine && <span className="teamChip neutral">{selectedLine.type === "arrow" ? "PASNING" : selectedLine.type === "run" ? "LØP" : "RULLERING"}</span>}
             </div>
 
-            {!selectedObject ? (
+            {!selectedObject && !selectedLine ? (
               <div className="inspectorEmpty">
                 <div className="inspectorGlyph">↖</div>
-                <strong>Velg et objekt</strong>
-                <p>Trykk på spiller, ball, kjegle eller figur. Høyreklikk på PC for hurtigmeny.</p>
-                <div className="shortcutCard"><span>Mellomrom</span><b>Play / pause</b><span>R</span><b>Revers</b><span>Ctrl/Cmd+Z</span><b>Angre</b></div>
+                <strong>Velg et objekt eller en linje</strong>
+                <p>Trykk på spiller, ball, kjegle, figur eller linje. Linjene har stort usynlig treffområde selv om de er tynne.</p>
+                <div className="shortcutCard"><span>Mellomrom</span><b>Play / pause</b><span>R</span><b>Revers</b><span>Delete</span><b>Slett valgt</b><span>Ctrl/Cmd+Z</span><b>Angre</b></div>
+              </div>
+            ) : selectedLine ? (
+              <div className="inspectorContent">
+                <div className="inspectorGroup">
+                  <div className="inspectorGroupTitle">Valgt linje</div>
+                  <p className="inspectorHelp">
+                    {selectedLine.sequenceOrder
+                      ? `Dette er steg ${selectedLine.sequenceOrder} i animasjonssekvensen. Sletter du den, bygges sekvensen opp igjen uten dette steget.`
+                      : "Denne linjen kan slettes uten å påvirke de andre linjene."}
+                  </p>
+                  <button className="secondaryButton full dangerText" type="button" onClick={deleteSelectedLine}>⌫ Slett denne linjen</button>
+                </div>
               </div>
             ) : (
               <div className="inspectorContent">

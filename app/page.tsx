@@ -1111,7 +1111,7 @@ export default function Home() {
     setStatus("Linjen er slettet.");
   }
 
-  function handleLinePointerDown(event: ReactPointerEvent<SVGLineElement>, line: BoardLine) {
+  function handleLinePointerDown(event: ReactPointerEvent<SVGElement>, line: BoardLine) {
     if (tool !== "select") return;
     event.stopPropagation();
     setSelectedLineId(line.id);
@@ -1885,26 +1885,7 @@ export default function Home() {
               {selectedLine && <span className="teamChip neutral">{selectedLine.type === "arrow" ? "PASNING" : selectedLine.type === "run" ? "LØP" : "RULLERING"}</span>}
             </div>
 
-            {!selectedObject && !selectedLine ? (
-              <div className="inspectorEmpty">
-                <div className="inspectorGlyph">↖</div>
-                <strong>Velg et objekt eller en linje</strong>
-                <p>Trykk på spiller, ball, kjegle, figur eller linje. Linjene har stort usynlig treffområde selv om de er tynne.</p>
-                <div className="shortcutCard"><span>Mellomrom</span><b>Play / pause</b><span>R</span><b>Revers</b><span>Delete</span><b>Slett valgt</b><span>Ctrl/Cmd+Z</span><b>Angre</b></div>
-              </div>
-            ) : selectedLine ? (
-              <div className="inspectorContent">
-                <div className="inspectorGroup">
-                  <div className="inspectorGroupTitle">Valgt linje</div>
-                  <p className="inspectorHelp">
-                    {selectedLine.sequenceOrder
-                      ? `Dette er steg ${selectedLine.sequenceOrder} i animasjonssekvensen. Sletter du den, bygges sekvensen opp igjen uten dette steget.`
-                      : "Denne linjen kan slettes uten å påvirke de andre linjene."}
-                  </p>
-                  <button className="secondaryButton full dangerText" type="button" onClick={deleteSelectedLine}>⌫ Slett denne linjen</button>
-                </div>
-              </div>
-            ) : (
+            {selectedObject ? (
               <div className="inspectorContent">
                 {selectedObject.type === "player" && (
                   <div className="inspectorGroup">
@@ -1958,6 +1939,25 @@ export default function Home() {
                     mutateCurrentScene((scene) => { scene.name = name; });
                   }} /></label>
                 </div>
+              </div>
+            ) : selectedLine ? (
+              <div className="inspectorContent">
+                <div className="inspectorGroup">
+                  <div className="inspectorGroupTitle">Valgt linje</div>
+                  <p className="inspectorHelp">
+                    {selectedLine.sequenceOrder
+                      ? `Dette er steg ${selectedLine.sequenceOrder} i animasjonssekvensen. Sletter du den, bygges sekvensen opp igjen uten dette steget.`
+                      : "Denne linjen kan slettes uten å påvirke de andre linjene."}
+                  </p>
+                  <button className="secondaryButton full dangerText" type="button" onClick={deleteSelectedLine}>⌫ Slett denne linjen</button>
+                </div>
+              </div>
+            ) : (
+              <div className="inspectorEmpty">
+                <div className="inspectorGlyph">↖</div>
+                <strong>Velg et objekt eller en linje</strong>
+                <p>Trykk på spiller, ball, kjegle, figur eller linje. Linjene har stort usynlig treffområde selv om de er tynne.</p>
+                <div className="shortcutCard"><span>Mellomrom</span><b>Play / pause</b><span>R</span><b>Revers</b><span>Delete</span><b>Slett valgt</b><span>Ctrl/Cmd+Z</span><b>Angre</b></div>
               </div>
             )}
           </aside>

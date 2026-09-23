@@ -292,3 +292,128 @@ button:disabled { opacity: .38; cursor: not-allowed !important; transform: none 
   .presentationTopbar > div { flex-direction: column; gap: 1px; }
   .presentationMode .pitchSvg { max-height: none; }
 }
+
+
+/* line colors + print mode */
+.lineColorSection { display: grid; gap: 8px; }
+.lineColorPalette { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; }
+.lineColorSwatch,
+.customColor {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  min-height: 31px;
+  border-radius: 9px;
+  border: 1px solid rgba(255,255,255,.16);
+  background: var(--swatch, rgba(255,255,255,.05));
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.18);
+}
+.lineColorSwatch:hover,
+.customColor:hover { transform: translateY(-1px); border-color: rgba(112,240,166,.55); }
+.lineColorSwatch.active {
+  border-color: #70f0a6;
+  box-shadow: 0 0 0 2px rgba(112,240,166,.22), inset 0 0 0 1px rgba(0,0,0,.25);
+}
+.customColor {
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #ff5c6c, #f7dd72 33%, #70f0a6 58%, #3a8bff 78%, #c6b9ff);
+  color: #07120c;
+  font-size: 1.15rem;
+  font-weight: 950;
+  overflow: hidden;
+}
+.customColor input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.lineColorHint { color: var(--muted); font-size: .65rem; line-height: 1.35; }
+.rotationBadge { pointer-events: none; }
+
+@media (max-width: 900px) {
+  .lineColorSection { grid-column: 1 / -1; }
+  .lineColorPalette { grid-template-columns: repeat(9, minmax(30px, 44px)); }
+}
+
+@media (max-width: 620px) {
+  .lineColorPalette { grid-template-columns: repeat(9, minmax(28px, 1fr)); }
+}
+
+@page {
+  size: landscape;
+  margin: 8mm;
+}
+
+@media print {
+  html, body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  body {
+    margin: 0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .studioShell {
+    min-height: auto !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  .topHeader,
+  .toolDock,
+  .workspaceToolbar,
+  .playbackDock,
+  .scenePanel,
+  .timelinePanel,
+  .inspectorPanel,
+  .objectContextMenu,
+  .presentationTopbar {
+    display: none !important;
+  }
+
+  .studioGrid,
+  .workspaceColumn {
+    display: block !important;
+    max-width: none !important;
+    margin: 0 !important;
+  }
+
+  .pitchCard {
+    padding: 0 !important;
+    background: #fff !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .pitchWrap {
+    overflow: visible !important;
+    background: #fff !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .pitchSvg {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    aspect-ratio: 1000 / 650 !important;
+  }
+
+  .pitchBackground { fill: #fff !important; }
+  .pitchStripe,
+  .pitchGrid { display: none !important; }
+  .pitchMarkings { stroke: #000 !important; opacity: 1 !important; }
+  .pitchDots { fill: #000 !important; opacity: 1 !important; }
+
+  /* A white tactical line would disappear on paper, so print it as black. */
+  .tacticLine.whiteLine { stroke: #000 !important; }
+
+  /* Rotation labels stay readable even when the chosen screen color is light. */
+  .rotationBadge circle { fill: #fff !important; stroke: #000 !important; }
+  .rotationBadge text { fill: #000 !important; }
+}

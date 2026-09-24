@@ -65,6 +65,7 @@ type BoardObject = {
   motionPath?: Point[];
   motionStart?: number;
   motionDuration?: number;
+  hidden?: boolean;
 };
 
 type BoardLine = {
@@ -81,6 +82,7 @@ type BoardLine = {
   timingDuration?: number;
   endSnapId?: string;
   startAfterLineId?: string;
+  hidden?: boolean;
 };
 
 type Scene = {
@@ -354,6 +356,11 @@ export default function Home() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [showGuideLines, setShowGuideLines] = useState(true);
   const [hideGuideLinesDuringPlayback, setHideGuideLinesDuringPlayback] = useState(true);
+  const [lineTypeVisibility, setLineTypeVisibility] = useState<Record<BoardLine["type"], boolean>>({
+    arrow: true,
+    run: true,
+    rotation: true,
+  });
   const [speed, setSpeed] = useState(1);
   const [lineColor, setLineColor] = useState("#ffffff");
   const [lineAnimationMode, setLineAnimationMode] = useState<LineAnimationMode>("off");
@@ -387,10 +394,14 @@ export default function Home() {
     () => [...lines].reverse().find((line) => line.sequenceId && line.animationKind && line.actorId) ?? null,
     [lines],
   );
+  const hiddenObjects = useMemo(() => objects.filter((object) => object.hidden), [objects]);
+  const hiddenLines = useMemo(() => lines.filter((line) => line.hidden), [lines]);
+  const hiddenItemCount = hiddenObjects.length + hiddenLines.length;
+
   const visibleSnapPoints = useMemo(() => {
     const groups = new Map<string, { point: Point; count: number }>();
     for (const line of lines) {
-      if (!line.endSnapId) continue;
+      if (line.hidden || !lineTypeVisibility[line.type] || !line.endSnapId) continue;
       const current = groups.get(line.endSnapId);
       if (current) current.count += 1;
       else groups.set(line.endSnapId, { point: { ...line.end }, count: 1 });
@@ -398,7 +409,7 @@ export default function Home() {
     return Array.from(groups.entries())
       .filter(([, value]) => value.count >= 2)
       .map(([id, value]) => ({ id, ...value }));
-  }, [lines]);
+  }, [lines, lineTypeVisibility]);
 
   const sceneDuration = useMemo(() => {
     const objectEnds = objects.filter(hasMotion).map((object) => (object.motionStart ?? 0) + (object.motionDuration ?? 2));
@@ -499,6 +510,7 @@ export default function Home() {
     let bestDistance = threshold;
 
     for (const line of lines) {
+      if (line.hidden || !lineTypeVisibility[line.type]) continue;
       const distance = pointDistance(point, line.end);
       if (
         distance < bestDistance ||
@@ -1437,6 +1449,64 @@ export default function Home() {
     setStatus(color ? "Linjefargen er endret." : "Linjen bruker standardfarge igjen.");
   }
 
+  function hideSelectedObject() {
+    if (!selectedId) return;
+    mutateCurrentScene((scene) => {
+      scene.objects = scene.objects.map((object) =>
+        object.id === selectedId ? { ...object, hidden: true } : object
+      );
+    });
+    setSelectedId(null);
+    setContextMenu(null);
+    setStatus("Elementet er skjult. Du kan vise det igjen under Synlighet.");
+  }
+
+  function hideSelectedLine() {
+    if (!selectedLineId) return;
+    mutateCurrentScene((scene) => {
+      scene.lines = scene.lines.map((line) =>
+        line.id === selectedLineId ? { ...line, hidden: true } : line
+      );
+    });
+    setSelectedLineId(null);
+    setStatus("Linjen er skjult. Animasjon og timing er beholdt.");
+  }
+
+  function showHiddenObject(id: string) {
+    mutateCurrentScene((scene) => {
+      scene.objects = scene.objects.map((object) =>
+        object.id === id ? { ...object, hidden: undefined } : object
+      );
+    });
+    setStatus("Elementet vises igjen.");
+  }
+
+  function showHiddenLine(id: string) {
+    mutateCurrentScene((scene) => {
+      scene.lines = scene.lines.map((line) =>
+        line.id === id ? { ...line, hidden: undefined } : line
+      );
+    });
+    setStatus("Linjen vises igjen.");
+  }
+
+  function showAllHiddenItems() {
+    if (hiddenItemCount === 0) return;
+    mutateCurrentScene((scene) => {
+      scene.objects = scene.objects.map((object) => ({ ...object, hidden: undefined }));
+      scene.lines = scene.lines.map((line) => ({ ...line, hidden: undefined }));
+    });
+    setStatus("Alle individuelt skjulte elementer vises igjen.");
+  }
+
+  function toggleLineTypeVisibility(type: BoardLine["type"]) {
+    const nextVisible = !lineTypeVisibility[type];
+    setLineTypeVisibility((current) => ({ ...current, [type]: nextVisible }));
+    if (!nextVisible && selectedLine?.type === type) setSelectedLineId(null);
+    const label = type === "arrow" ? "Pasningslinjer" : type === "run" ? "Løpslinjer" : "Rulleringslinjer";
+    setStatus(nextVisible ? `${label} vises.` : `${label} er skjult.`);
+  }
+
   function clearMovement() {
     if (!selectedId) return;
     updateSelected({ target: undefined, motionPath: undefined, motionStart: undefined, motionDuration: undefined });
@@ -1963,6 +2033,67 @@ export default function Home() {
                 )}
               </section>
 
+              <section className={`toolDropdown ${openToolPanel === "Synlighet" ? "open" : ""}`}>
+                <button
+                  type="button"
+                  className="toolDropdownTrigger"
+                  onClick={() => setOpenToolPanel(openToolPanel === "Synlighet" ? null : "Synlighet")}
+                  aria-expanded={openToolPanel === "Synlighet"}
+                >
+                  <span className="dropdownIcon">◉</span>
+                  <span className="dropdownTitle">
+                    <strong>Synlighet</strong>
+                    <small>{hiddenItemCount > 0 ? `${hiddenItemCount} skjult individuelt` : "Elementer og linjetyper"}</small>
+                  </span>
+                  <span className="dropdownChevron">{openToolPanel === "Synlighet" ? "⌃" : "⌄"}</span>
+                </button>
+                {openToolPanel === "Synlighet" && (
+                  <div className="toolDropdownBody visibilityPanel">
+                    <div className="visibilityGroup">
+                      <span className="visibilityHeading">Linjetyper</span>
+                      <button type="button" className={`visibilityToggle ${lineTypeVisibility.arrow ? "on" : "off"}`} onClick={() => toggleLineTypeVisibility("arrow")}>
+                        <span>➜ Pasning</span><b>{lineTypeVisibility.arrow ? "Vises" : "Skjult"}</b>
+                      </button>
+                      <button type="button" className={`visibilityToggle ${lineTypeVisibility.run ? "on" : "off"}`} onClick={() => toggleLineTypeVisibility("run")}>
+                        <span>⋯ Løp</span><b>{lineTypeVisibility.run ? "Vises" : "Skjult"}</b>
+                      </button>
+                      <button type="button" className={`visibilityToggle ${lineTypeVisibility.rotation ? "on" : "off"}`} onClick={() => toggleLineTypeVisibility("rotation")}>
+                        <span>↻ Rullering</span><b>{lineTypeVisibility.rotation ? "Vises" : "Skjult"}</b>
+                      </button>
+                    </div>
+
+                    <div className="visibilityGroup">
+                      <div className="visibilityHeadingRow">
+                        <span className="visibilityHeading">Skjult individuelt</span>
+                        {hiddenItemCount > 0 && (
+                          <button className="miniButton text" type="button" onClick={showAllHiddenItems}>Vis alle</button>
+                        )}
+                      </div>
+                      {hiddenItemCount === 0 ? (
+                        <small className="lineColorHint">Velg et objekt eller en linje og trykk «Skjul» for å legge det her.</small>
+                      ) : (
+                        <div className="hiddenItemList">
+                          {hiddenObjects.map((object) => (
+                            <button key={object.id} type="button" className="hiddenItemRow" onClick={() => showHiddenObject(object.id)}>
+                              <span>{motionLabel(object)}</span><b>Vis</b>
+                            </button>
+                          ))}
+                          {hiddenLines.map((line) => (
+                            <button key={line.id} type="button" className="hiddenItemRow" onClick={() => showHiddenLine(line.id)}>
+                              <span>
+                                {line.type === "arrow" ? "Pasningslinje" : line.type === "run" ? "Løpslinje" : "Rulleringslinje"}
+                                {line.sequenceOrder ? ` · steg ${line.sequenceOrder}` : ""}
+                              </span>
+                              <b>Vis</b>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </section>
+
               <section className={`toolDropdown ${openToolPanel === "Farge" ? "open" : ""}`}>
                 <button
                   type="button"
@@ -2082,7 +2213,7 @@ export default function Home() {
 
                 {renderPitch()}
 
-                {guideLinesVisible && lines.map((line) => {
+                {guideLinesVisible && lines.filter((line) => !line.hidden && lineTypeVisibility[line.type]).map((line) => {
                   const color = line.color ?? "#ffffff";
                   const isWhite = color.toLowerCase() === "#ffffff" || color.toLowerCase() === "#fff";
                   const midX = (line.start.x + line.end.x) / 2;
@@ -2164,14 +2295,14 @@ export default function Home() {
                   </g>
                 )}
 
-                {guideLinesVisible && objects.map((object) => object.target && (
+                {guideLinesVisible && objects.filter((object) => !object.hidden).map((object) => object.target && (
                   <g key={`target-${object.id}`} opacity={object.id === selectedId ? ".9" : ".42"}>
                     <line x1={object.x} y1={object.y} x2={object.target.x} y2={object.target.y} stroke={object.id === selectedId ? "#f7dd72" : "#fff"} strokeWidth="2.6" strokeDasharray="8 9" />
                     <circle cx={object.target.x} cy={object.target.y} r="8" fill="none" stroke="#fff" strokeWidth="2.5" />
                   </g>
                 ))}
 
-                {guideLinesVisible && objects.map((object) => object.motionPath && object.motionPath.length > 1 && (
+                {guideLinesVisible && objects.filter((object) => !object.hidden).map((object) => object.motionPath && object.motionPath.length > 1 && (
                   <g key={`path-${object.id}`} opacity={object.id === selectedId ? ".95" : ".38"}>
                     <polyline
                       points={object.motionPath.map((point) => `${point.x},${point.y}`).join(" ")}
@@ -2189,7 +2320,7 @@ export default function Home() {
                   />
                 )}
 
-                {objects.map((object) => {
+                {objects.filter((object) => !object.hidden).map((object) => {
                   const point = displayPoint(object);
                   const selected = object.id === selectedId;
                   const dimmed = selectedId && !selected && tool === "select";
@@ -2305,6 +2436,7 @@ export default function Home() {
                   <button type="button" onClick={() => { chooseTool("movement"); setContextMenu(null); }}>◎ Rett bevegelse</button>
                   <button type="button" onClick={() => { chooseTool("freeMovement"); setContextMenu(null); }}>〰 Fri bevegelse</button>
                   <button type="button" onClick={() => { duplicateSelected(); setContextMenu(null); }}>⧉ Dupliser</button>
+                  <button type="button" onClick={hideSelectedObject}>◌ Skjul</button>
                   <button type="button" className="dangerText" onClick={deleteSelected}>⌫ Slett</button>
                 </div>
               )}
@@ -2491,6 +2623,7 @@ export default function Home() {
                   <button type="button" onClick={() => chooseTool("movement")}>◎ Rett</button>
                   <button type="button" onClick={() => chooseTool("freeMovement")}>〰 Fri</button>
                   <button type="button" onClick={duplicateSelected}>⧉ Kopi</button>
+                  <button type="button" onClick={hideSelectedObject}>◌ Skjul</button>
                   <button type="button" className="dangerText" onClick={deleteSelected}>⌫ Slett</button>
                 </div>
 
@@ -2563,6 +2696,7 @@ export default function Home() {
                       ↪ Fortsett denne sekvensen
                     </button>
                   )}
+                  <button className="secondaryButton full" type="button" onClick={hideSelectedLine}>◌ Skjul denne linjen</button>
                   <button className="secondaryButton full dangerText" type="button" onClick={deleteSelectedLine}>⌫ Slett denne linjen</button>
                 </div>
               </div>

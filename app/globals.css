@@ -720,3 +720,54 @@ button:disabled { opacity: .38; cursor: not-allowed !important; transform: none 
 @media (max-width: 620px) {
   .linePointActions { grid-template-columns: 1fr; }
 }
+
+
+/* persistent Select tool */
+.persistentSelectTool {
+  width: 100%;
+  min-height: 52px;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255,255,255,.025);
+  color: #e4eee9;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  cursor: pointer;
+}
+.persistentSelectTool:hover {
+  border-color: rgba(112,240,166,.35);
+  background: rgba(255,255,255,.045);
+}
+.persistentSelectTool.active {
+  border-color: rgba(112,240,166,.65);
+  background: linear-gradient(180deg, rgba(69,213,133,.17), rgba(42,125,83,.10));
+  box-shadow: inset 0 0 0 1px rgba(112,240,166,.06);
+}
+.persistentSelectIcon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: rgba(255,255,255,.045);
+  color: #fff;
+  font-size: 1.08rem;
+  font-weight: 900;
+}
+.persistentSelectTool > span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.persistentSelectTool strong {
+  font-size: .76rem;
+}
+.persistentSelectTool small {
+  color: var(--muted);
+  font-size: .61rem;
+}

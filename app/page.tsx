@@ -80,6 +80,7 @@ type BoardLine = {
   timingStart?: number;
   timingDuration?: number;
   endSnapId?: string;
+  startAfterLineId?: string;
 };
 
 type Scene = {
@@ -98,6 +99,7 @@ type DrawingLine = {
   animationKind?: Exclude<LineAnimationMode, "off">;
   actorId?: string;
   snapTargetLineId?: string;
+  startAfterLineId?: string;
 };
 
 type FreehandDrawing = {
@@ -614,6 +616,29 @@ export default function Home() {
     );
   }
 
+  function latestActorMovementLine(actorId: string) {
+    const candidates = lines.filter((line) =>
+      line.actorId === actorId &&
+      (line.animationKind === "run" || line.animationKind === "rotation")
+    );
+    if (candidates.length === 0) return null;
+
+    return candidates.reduce((latest, line) => {
+      const latestEnd = latest.timingStart !== undefined && latest.timingDuration !== undefined
+        ? latest.timingStart + latest.timingDuration
+        : -1;
+      const lineEnd = line.timingStart !== undefined && line.timingDuration !== undefined
+        ? line.timingStart + line.timingDuration
+        : -1;
+
+      if (lineEnd > latestEnd + 0.001) return line;
+      if (Math.abs(lineEnd - latestEnd) <= 0.001) {
+        return lines.indexOf(line) > lines.indexOf(latest) ? line : latest;
+      }
+      return latest;
+    });
+  }
+
   function prepareLineDrawing(type: "arrow" | "run" | "rotation", pointerStart: Point, object?: BoardObject): DrawingLine | null {
     const modeTool = animationToolForMode(lineAnimationMode);
     const animated = lineAnimationMode !== "off" && modeTool === type;
@@ -622,6 +647,7 @@ export default function Home() {
 
     let actorId = lineAnimationActorId;
     let start = lineAnimationLastPoint ?? pointerStart;
+    let startAfterLineId: string | undefined;
 
     if (lineAnimationMode === "pass") {
       if (!actorId) {
@@ -639,13 +665,28 @@ export default function Home() {
           return null;
         }
         actorId = candidate.id;
-        start = { x: candidate.x, y: candidate.y };
+
+        if (lineAnimationMode === "rotation" && !lineAnimationLastPoint) {
+          const previousMovement = latestActorMovementLine(actorId);
+          if (previousMovement) {
+            start = { ...previousMovement.end };
+            startAfterLineId = previousMovement.id;
+          } else {
+            start = { x: candidate.x, y: candidate.y };
+          }
+        } else {
+          start = { x: candidate.x, y: candidate.y };
+        }
       }
     }
 
     setLineAnimationActorId(actorId);
     const order = lineAnimationStep + 1;
-    setStatus(`Tegner steg ${order}. Slipp for å lagre, tegn deretter neste linje.`);
+    setStatus(
+      startAfterLineId
+        ? `Rulleringen starter fra spillerens siste posisjon. Tegner steg ${order}.`
+        : `Tegner steg ${order}. Slipp for å lagre, tegn deretter neste linje.`,
+    );
 
     return {
       type,
@@ -655,6 +696,7 @@ export default function Home() {
       sequenceOrder: order,
       animationKind: lineAnimationMode as Exclude<LineAnimationMode, "off">,
       actorId,
+      startAfterLineId,
     };
   }
 
@@ -728,19 +770,31 @@ export default function Home() {
         if (movementLines.length === 0) continue;
 
         const first = movementLines[0];
-        let trigger: BoardLine | null = null;
-        let bestDistance = Number.POSITIVE_INFINITY;
+        let earliestStart = 0;
 
-        for (const passLine of passLines) {
-          if (passLine.timingStart === undefined) continue;
-          const distance = pointDistance(passLine.start, first.start);
-          if (distance <= 30 && distance < bestDistance) {
-            trigger = passLine;
-            bestDistance = distance;
+        if (first.startAfterLineId) {
+          const previousMovement = animatedLines.find((line) => line.id === first.startAfterLineId);
+          if (
+            previousMovement &&
+            previousMovement.timingStart !== undefined &&
+            previousMovement.timingDuration !== undefined
+          ) {
+            earliestStart = previousMovement.timingStart + previousMovement.timingDuration;
           }
         }
 
-        let cursor = trigger?.timingStart ?? 0;
+        const matchingPasses = passLines
+          .filter((passLine) =>
+            passLine.timingStart !== undefined &&
+            pointDistance(passLine.start, first.start) <= 30
+          )
+          .sort((a, b) => (a.timingStart ?? 0) - (b.timingStart ?? 0));
+
+        const trigger = matchingPasses.find((passLine) =>
+          (passLine.timingStart ?? 0) >= earliestStart - 0.03
+        ) ?? (earliestStart <= 0.03 ? matchingPasses[0] : undefined);
+
+        let cursor = Math.max(earliestStart, trigger?.timingStart ?? earliestStart);
         for (const line of movementLines) {
           const duration = naturalDuration(line);
           line.timingStart = cursor;
@@ -1035,6 +1089,7 @@ export default function Home() {
           animationKind: drawing.animationKind,
           actorId: drawing.actorId,
           endSnapId: snapId,
+          startAfterLineId: drawing.startAfterLineId,
         };
 
         mutateCurrentScene((scene) => {

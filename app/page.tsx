@@ -87,6 +87,7 @@ type BoardLine = {
   hidden?: boolean;
   lineShape?: "straight" | "free";
   controlPoints?: Point[];
+  manualColor?: boolean;
 };
 
 type Scene = {
@@ -174,6 +175,20 @@ const lineColors = [
   { value: "#ff9f43", label: "Oransje" },
   { value: "#c6b9ff", label: "Lilla" },
 ];
+
+function defaultLineColor(type: BoardLine["type"]) {
+  if (type === "arrow") return "#f7dd72";
+  if (type === "run") return "#3a8bff";
+  return "#ff9f43";
+}
+
+function resolvedLineColor(line: BoardLine) {
+  if (line.manualColor && line.color) return line.color;
+  // Older white/default lines migrate naturally to type colors.
+  // Preserve older non-white choices as intentional custom colors.
+  if (line.color && line.color.toLowerCase() !== "#ffffff" && line.color.toLowerCase() !== "#fff") return line.color;
+  return defaultLineColor(line.type);
+}
 
 const toolGroups: Array<{
   title: string;
@@ -391,14 +406,17 @@ export default function Home() {
   const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showGuideLines, setShowGuideLines] = useState(true);
-  const [hideGuideLinesDuringPlayback, setHideGuideLinesDuringPlayback] = useState(true);
   const [lineTypeVisibility, setLineTypeVisibility] = useState<Record<BoardLine["type"], boolean>>({
     arrow: true,
     run: true,
     rotation: true,
   });
+  const [playbackLineTypeVisibility, setPlaybackLineTypeVisibility] = useState<Record<BoardLine["type"], boolean>>({
+    arrow: false,
+    run: false,
+    rotation: false,
+  });
   const [speed, setSpeed] = useState(1);
-  const [lineColor, setLineColor] = useState("#ffffff");
   const [lineAnimationMode, setLineAnimationMode] = useState<LineAnimationMode>("off");
   const [lineAnimationSequenceId, setLineAnimationSequenceId] = useState(() => makeId());
   const [lineAnimationActorId, setLineAnimationActorId] = useState<string | null>(null);
@@ -467,7 +485,15 @@ export default function Home() {
   const visibleX = clamp(viewCenter.x - visibleWidth / 2, 0, 1000 - visibleWidth);
   const visibleY = clamp(viewCenter.y - visibleHeight / 2, 0, 650 - visibleHeight);
   const currentViewBox = `${visibleX} ${visibleY} ${visibleWidth} ${visibleHeight}`;
-  const guideLinesVisible = showGuideLines && !(hideGuideLinesDuringPlayback && (isPlaying || pendingSequenceDirection !== null));
+  const playbackActive = isPlaying || pendingSequenceDirection !== null;
+  const editGuidesVisible = showGuideLines && !playbackActive;
+
+  function lineVisibleNow(line: BoardLine) {
+    if (line.hidden) return false;
+    return playbackActive
+      ? playbackLineTypeVisibility[line.type]
+      : showGuideLines && lineTypeVisibility[line.type];
+  }
 
   function snapshotForHistory(snapshot: Scene[]) {
     setHistoryPast((current) => [...current.slice(-39), clone(snapshot)]);
@@ -1257,7 +1283,6 @@ export default function Home() {
           type: drawing.type,
           start: drawing.start,
           end,
-          color: lineColor,
           sequenceId: drawing.sequenceId,
           sequenceOrder: drawing.sequenceOrder,
           animationKind: drawing.animationKind,
@@ -1337,7 +1362,7 @@ export default function Home() {
       };
       if (existingBall) Object.assign(existingBall, passPatch);
       else scene.objects.push({ id: makeId(), type: "ball", x: from.x, y: from.y, ...passPatch });
-      scene.lines.push({ id: makeId(), type: "arrow", start: { x: from.x, y: from.y }, end: { x: to.x, y: to.y }, color: lineColor });
+      scene.lines.push({ id: makeId(), type: "arrow", start: { x: from.x, y: from.y }, end: { x: to.x, y: to.y } });
     });
     setPassFromId(null);
     setPlayhead(0);
@@ -1602,9 +1627,13 @@ export default function Home() {
   function updateSelectedLineColor(color?: string) {
     if (!selectedLineId) return;
     mutateCurrentScene((scene) => {
-      scene.lines = scene.lines.map((line) => line.id === selectedLineId ? { ...line, color } : line);
+      scene.lines = scene.lines.map((line) =>
+        line.id === selectedLineId
+          ? { ...line, color, manualColor: color ? true : undefined }
+          : line
+      );
     });
-    setStatus(color ? "Linjefargen er endret." : "Linjen bruker standardfarge igjen.");
+    setStatus(color ? "Linjefargen er overstyrt for denne linjen." : "Linjen bruker automatisk typefarge igjen.");
   }
 
   function hideSelectedObject() {
@@ -1663,6 +1692,18 @@ export default function Home() {
     if (!nextVisible && selectedLine?.type === type) setSelectedLineId(null);
     const label = type === "arrow" ? "Pasningslinjer" : type === "run" ? "Løpslinjer" : "Rulleringslinjer";
     setStatus(nextVisible ? `${label} vises.` : `${label} er skjult.`);
+  }
+
+  function togglePlaybackLineType(type: BoardLine["type"]) {
+    const nextVisible = !playbackLineTypeVisibility[type];
+    setPlaybackLineTypeVisibility((current) => ({ ...current, [type]: nextVisible }));
+    const label = type === "arrow" ? "Pasning" : type === "run" ? "Løp" : "Rullering";
+    setStatus(nextVisible ? `${label} vises under avspilling.` : `${label} skjules under avspilling.`);
+  }
+
+  function clearPlaybackLineTypes() {
+    setPlaybackLineTypeVisibility({ arrow: false, run: false, rotation: false });
+    setStatus("Alle linjetyper skjules under avspilling.");
   }
 
   function clearMovement() {
@@ -2381,32 +2422,26 @@ export default function Home() {
                   onClick={() => setOpenToolPanel(openToolPanel === "Farge" ? null : "Farge")}
                   aria-expanded={openToolPanel === "Farge"}
                 >
-                  <span className="dropdownIcon colorDot" style={{ "--current-line-color": lineColor } as CSSProperties}>●</span>
+                  <span className="dropdownIcon autoColorIcon">●</span>
                   <span className="dropdownTitle">
-                    <strong>Linjefarge</strong>
-                    <small>Farge på nye linjer</small>
+                    <strong>Autofarger</strong>
+                    <small>Pasning · løp · rullering</small>
                   </span>
                   <span className="dropdownChevron">{openToolPanel === "Farge" ? "⌃" : "⌄"}</span>
                 </button>
                 {openToolPanel === "Farge" && (
-                  <div className="toolDropdownBody lineColorSection">
-                    <div className="lineColorPalette" aria-label="Velg linjefarge">
-                      {lineColors.map((item) => (
-                        <button
-                          key={item.value}
-                          type="button"
-                          className={`lineColorSwatch ${lineColor.toLowerCase() === item.value ? "active" : ""}`}
-                          style={{ "--swatch": item.value } as CSSProperties}
-                          onClick={() => setLineColor(item.value)}
-                          title={item.label}
-                          aria-label={item.label}
-                        />
-                      ))}
-                      <label className="customColor" title="Velg egen farge">
-                        <span>+</span>
-                        <input type="color" value={lineColor} onChange={(event) => setLineColor(event.target.value)} aria-label="Egen linjefarge" />
-                      </label>
-                    </div>
+                  <div className="toolDropdownBody autoColorLegend">
+                    {([
+                      ["arrow", "➜", "Pasning"],
+                      ["run", "⋯", "Løp"],
+                      ["rotation", "↻", "Rullering"],
+                    ] as Array<[BoardLine["type"], string, string]>).map(([type, icon, label]) => (
+                      <div className="autoColorRow" key={type}>
+                        <span className="typeColorDot" style={{ "--type-color": defaultLineColor(type) } as CSSProperties} />
+                        <span>{icon} {label}</span>
+                      </div>
+                    ))}
+                    <small className="lineColorHint">Fargene settes automatisk. Velg en enkelt linje hvis du vil overstyre fargen.</small>
                   </div>
                 )}
               </section>
@@ -2493,8 +2528,8 @@ export default function Home() {
 
                 {renderPitch()}
 
-                {guideLinesVisible && lines.filter((line) => !line.hidden && lineTypeVisibility[line.type]).map((line) => {
-                  const color = line.color ?? "#ffffff";
+                {lines.filter(lineVisibleNow).map((line) => {
+                  const color = resolvedLineColor(line);
                   const isWhite = color.toLowerCase() === "#ffffff" || color.toLowerCase() === "#fff";
                   const points = linePoints(line);
                   const pointsString = linePathPointsString(line);
@@ -2563,7 +2598,7 @@ export default function Home() {
                   );
                 })}
 
-                {guideLinesVisible && visibleSnapPoints.map((snap) => (
+                {editGuidesVisible && visibleSnapPoints.map((snap) => (
                   <g key={`snap-${snap.id}`} className="sharedSnapPoint" transform={`translate(${snap.point.x} ${snap.point.y})`} pointerEvents="none">
                     <circle r="7" fill="#081511" stroke="#70f0a6" strokeWidth="1.8" opacity=".9" />
                     <circle r="2.2" fill="#70f0a6" />
@@ -2574,7 +2609,7 @@ export default function Home() {
                   <g>
                     <line
                       x1={drawing.start.x} y1={drawing.start.y} x2={drawing.current.x} y2={drawing.current.y}
-                      stroke={lineColor} strokeWidth="2.3" strokeLinecap="round"
+                      stroke={defaultLineColor(drawing.type)} strokeWidth="2.3" strokeLinecap="round"
                       strokeDasharray={drawing.type === "run" ? "8 7" : drawing.type === "rotation" ? "3 6 13 6" : undefined}
                       markerEnd={drawing.type === "arrow" || drawing.type === "rotation" ? "url(#arrowHead)" : undefined}
                       opacity=".96"
@@ -2588,26 +2623,26 @@ export default function Home() {
                     )}
                     {drawing.sequenceOrder ? (
                       <g transform={`translate(${(drawing.start.x + drawing.current.x) / 2} ${(drawing.start.y + drawing.current.y) / 2})`}>
-                        <circle r="9" fill="#081511" stroke={lineColor} strokeWidth="1.8" />
-                        <text y="3.4" textAnchor="middle" fill={lineColor} fontSize="8.5" fontWeight="950">{drawing.sequenceOrder}</text>
+                        <circle r="9" fill="#081511" stroke={defaultLineColor(drawing.type)} strokeWidth="1.8" />
+                        <text y="3.4" textAnchor="middle" fill={defaultLineColor(drawing.type)} fontSize="8.5" fontWeight="950">{drawing.sequenceOrder}</text>
                       </g>
                     ) : drawing.type === "rotation" ? (
                       <g transform={`translate(${(drawing.start.x + drawing.current.x) / 2} ${(drawing.start.y + drawing.current.y) / 2})`}>
-                        <circle r="8.5" fill="#081511" stroke={lineColor} strokeWidth="1.8" />
-                        <text y="3.2" textAnchor="middle" fill={lineColor} fontSize="8" fontWeight="950">R</text>
+                        <circle r="8.5" fill="#081511" stroke={defaultLineColor(drawing.type)} strokeWidth="1.8" />
+                        <text y="3.2" textAnchor="middle" fill={defaultLineColor(drawing.type)} fontSize="8" fontWeight="950">R</text>
                       </g>
                     ) : null}
                   </g>
                 )}
 
-                {guideLinesVisible && objects.filter((object) => !object.hidden).map((object) => object.target && (
+                {editGuidesVisible && objects.filter((object) => !object.hidden).map((object) => object.target && (
                   <g key={`target-${object.id}`} opacity={object.id === selectedId ? ".9" : ".42"}>
                     <line x1={object.x} y1={object.y} x2={object.target.x} y2={object.target.y} stroke={object.id === selectedId ? "#f7dd72" : "#fff"} strokeWidth="2.6" strokeDasharray="8 9" />
                     <circle cx={object.target.x} cy={object.target.y} r="8" fill="none" stroke="#fff" strokeWidth="2.5" />
                   </g>
                 ))}
 
-                {guideLinesVisible && objects.filter((object) => !object.hidden).map((object) => object.motionPath && object.motionPath.length > 1 && (
+                {editGuidesVisible && objects.filter((object) => !object.hidden).map((object) => object.motionPath && object.motionPath.length > 1 && (
                   <g key={`path-${object.id}`} opacity={object.id === selectedId ? ".95" : ".38"}>
                     <polyline
                       points={object.motionPath.map((point) => `${point.x},${point.y}`).join(" ")}
@@ -2634,7 +2669,7 @@ export default function Home() {
                   const objectContrast = contrastColor(objectColor);
 
                   if (object.type === "snapPoint") {
-                    if (!guideLinesVisible) return null;
+                    if (!editGuidesVisible) return null;
                     return (
                       <g
                         key={object.id}
@@ -2775,36 +2810,39 @@ export default function Home() {
               <button className={`playButton ${isPlaying && playDirectionRef.current === 1 ? "playing" : ""}`} type="button" onClick={toggleForward} title="Play / pause (mellomrom)">{isPlaying && playDirectionRef.current === 1 ? "❚❚" : "▶"}</button>
               <div className="timeReadout"><strong>{playhead.toFixed(1)}</strong><span>/ {sceneDuration.toFixed(1)} s</span></div>
               <input className="scrubber" type="range" min="0" max={sceneDuration} step="0.02" value={playhead} onChange={(event) => { if (animationRef.current !== null) cancelAnimationFrame(animationRef.current); setIsPlaying(false); setPlayhead(Number(event.target.value)); }} aria-label="Tidslinje" />
-              <div className="lineVisibilityControls" aria-label="Visning av hjelpelinjer">
+              <div className="lineVisibilityControls" aria-label="Linjevisning">
                 <button
                   className={`miniButton text ${showGuideLines ? "active" : ""}`}
                   type="button"
                   onClick={() => {
                     setShowGuideLines((current) => {
                       const next = !current;
-                      setStatus(next ? "Hjelpelinjene vises." : "Hjelpelinjene er skjult.");
+                      setStatus(next ? "Hjelpelinjene vises i redigering." : "Hjelpelinjene er skjult i redigering.");
                       return next;
                     });
                   }}
-                  title="Vis eller skjul alle hjelpe- og animasjonslinjer"
+                  title="Vis eller skjul hjelpelinjer mens du redigerer"
                 >
-                  {showGuideLines ? "◉ Linjer" : "○ Linjer"}
+                  {showGuideLines ? "◉ Redigering" : "○ Redigering"}
                 </button>
-                <button
-                  className={`miniButton text ${hideGuideLinesDuringPlayback ? "active" : ""}`}
-                  type="button"
-                  onClick={() => {
-                    setHideGuideLinesDuringPlayback((current) => {
-                      const next = !current;
-                      setStatus(next ? "Linjene skjules automatisk under avspilling." : "Linjene forblir synlige under avspilling.");
-                      return next;
-                    });
-                  }}
-                  disabled={!showGuideLines}
-                  title="Skjul linjene automatisk mens animasjonen spiller"
-                >
-                  {hideGuideLinesDuringPlayback ? "✓ Auto-skjul" : "Auto-skjul"}
-                </button>
+                <span className="playbackFilterLabel">Play:</span>
+                {([
+                  ["arrow", "Pasning"],
+                  ["run", "Løp"],
+                  ["rotation", "Rullering"],
+                ] as Array<[BoardLine["type"], string]>).map(([type, label]) => (
+                  <button
+                    key={type}
+                    className={`miniButton text playbackTypeToggle ${playbackLineTypeVisibility[type] ? "active" : ""}`}
+                    style={{ "--type-color": defaultLineColor(type) } as CSSProperties}
+                    type="button"
+                    onClick={() => togglePlaybackLineType(type)}
+                    title={`Vis/skjul ${label.toLowerCase()} under avspilling`}
+                  >
+                    <span className="typeColorDot" />{label}
+                  </button>
+                ))}
+                <button className="miniButton text" type="button" onClick={clearPlaybackLineTypes} title="Skjul alle linjer under avspilling">Ingen</button>
               </div>
               <select className="darkSelect speedSelect" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} aria-label="Avspillingsfart">
                 <option value={0.5}>0,5×</option><option value={1}>1×</option><option value={1.5}>1,5×</option><option value={2}>2×</option>
@@ -2996,7 +3034,7 @@ export default function Home() {
                   <div className="inspectorGroupTitle">Farge</div>
                   <div className="lineColorPalette" aria-label="Endre farge på valgt linje">
                     {lineColors.map((item) => {
-                      const currentColor = selectedLine.color ?? "#ffffff";
+                      const currentColor = resolvedLineColor(selectedLine);
                       return (
                         <button
                           key={item.value}
@@ -3013,14 +3051,14 @@ export default function Home() {
                       <span>+</span>
                       <input
                         type="color"
-                        value={selectedLine.color ?? "#ffffff"}
+                        value={resolvedLineColor(selectedLine)}
                         onChange={(event) => updateSelectedLineColor(event.target.value)}
                         aria-label="Egen linjefarge"
                       />
                     </label>
                   </div>
                   {selectedLine.color && (
-                    <button className="miniButton text" type="button" onClick={() => updateSelectedLineColor(undefined)}>↺ Standardfarge</button>
+                    <button className="miniButton text" type="button" onClick={() => updateSelectedLineColor(undefined)}>↺ Automatisk typefarge</button>
                   )}
                 </div>
 

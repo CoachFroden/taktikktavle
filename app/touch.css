@@ -296,3 +296,10 @@
     gap: 7px;
   }
 }
+
+
+/* keep floating touch controls clear of the Mønstre launcher */
+.touchModeLauncher,
+.touchControlDock {
+  bottom: max(82px, calc(env(safe-area-inset-bottom) + 70px));
+}

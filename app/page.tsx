@@ -83,6 +83,8 @@ type BoardLine = {
   endSnapId?: string;
   startAfterLineId?: string;
   hidden?: boolean;
+  lineShape?: "straight" | "free";
+  controlPoints?: Point[];
 };
 
 type Scene = {
@@ -114,6 +116,13 @@ type PanDrag = {
   clientX: number;
   clientY: number;
   center: Point;
+};
+
+type LinePointDrag = {
+  lineId: string;
+  pointIndex: number;
+  snapshot: Scene[];
+  snapTargetLineId?: string;
 };
 
 type FormationId = "433" | "442" | "343" | "332" | "231" | "121";
@@ -261,6 +270,22 @@ function pathLength(path: Point[]) {
   return total;
 }
 
+function linePoints(line: BoardLine): Point[] {
+  return [
+    { ...line.start },
+    ...(line.controlPoints ?? []).map((point) => ({ ...point })),
+    { ...line.end },
+  ];
+}
+
+function lineIsFree(line: BoardLine) {
+  return line.lineShape === "free" || Boolean(line.controlPoints?.length);
+}
+
+function linePathPointsString(line: BoardLine) {
+  return linePoints(line).map((point) => `${point.x},${point.y}`).join(" ");
+}
+
 function objectEndPoint(object: BoardObject): Point {
   if (object.motionPath && object.motionPath.length > 1) return object.motionPath[object.motionPath.length - 1];
   if (object.target) return object.target;
@@ -337,6 +362,7 @@ export default function Home() {
   const freehandRef = useRef<FreehandDrawing | null>(null);
   const dragSnapshotRef = useRef<Scene[] | null>(null);
   const panDragRef = useRef<PanDrag | null>(null);
+  const linePointDragRef = useRef<LinePointDrag | null>(null);
   const sequenceRef = useRef(false);
 
   const [title, setTitle] = useState("Ny taktikk");
@@ -457,6 +483,12 @@ export default function Home() {
     setScenes((current) => current.map((scene, index) => index === sceneIndex ? { ...scene, objects: updater(scene.objects) } : scene));
   }
 
+  function updateCurrentLinesWithoutHistory(updater: (items: BoardLine[]) => BoardLine[]) {
+    setScenes((current) => current.map((scene, index) =>
+      index === sceneIndex ? { ...scene, lines: updater(scene.lines) } : scene
+    ));
+  }
+
   function undo() {
     if (historyPast.length === 0) return;
     const previous = historyPast[historyPast.length - 1];
@@ -503,14 +535,14 @@ export default function Home() {
     return Math.max(10, 18 * boardUnitsPerPixel);
   }
 
-  function findLineEndSnap(point: Point, disabled = false) {
+  function findLineEndSnap(point: Point, disabled = false, excludeLineId?: string) {
     if (disabled || lines.length === 0) return null;
     const threshold = lineSnapThreshold();
     let best: BoardLine | null = null;
     let bestDistance = threshold;
 
     for (const line of lines) {
-      if (line.hidden || !lineTypeVisibility[line.type]) continue;
+      if (line.id === excludeLineId || line.hidden || !lineTypeVisibility[line.type]) continue;
       const distance = pointDistance(point, line.end);
       if (
         distance < bestDistance ||
@@ -742,7 +774,7 @@ export default function Home() {
         .sort((a, b) => (a.sequenceOrder ?? 0) - (b.sequenceOrder ?? 0));
 
     const naturalDuration = (line: BoardLine) =>
-      lineAnimationDuration(line.animationKind as Exclude<LineAnimationMode, "off">, [line.start, line.end]);
+      lineAnimationDuration(line.animationKind as Exclude<LineAnimationMode, "off">, linePoints(line));
 
     const schedulePasses = (useSyncTargets: boolean) => {
       for (const sequenceId of passSequenceIds) {
@@ -885,7 +917,13 @@ export default function Home() {
       object.x = first.start.x;
       object.y = first.start.y;
       object.target = undefined;
-      object.motionPath = [{ ...first.start }, ...actorLines.map((line) => ({ ...line.end }))];
+      const actorPath: Point[] = [];
+      for (const line of actorLines) {
+        const points = linePoints(line);
+        if (actorPath.length === 0) actorPath.push(...points);
+        else actorPath.push(...points.slice(1));
+      }
+      object.motionPath = actorPath;
       object.motionStart = start;
       object.motionDuration = Math.max(0.15, end - start);
     }
@@ -1022,6 +1060,32 @@ export default function Home() {
       updateCurrentObjectsWithoutHistory((items) => items.map((object) => object.id === draggingId ? { ...object, x: point.x, y: point.y } : object));
     }
 
+    const linePointDrag = linePointDragRef.current;
+    if (linePointDrag && tool === "select") {
+      setPlayhead(0);
+      updateCurrentLinesWithoutHistory((items) => items.map((line) => {
+        if (line.id !== linePointDrag.lineId) return line;
+
+        const points = linePoints(line);
+        const isEnd = linePointDrag.pointIndex === points.length - 1;
+        const isStart = linePointDrag.pointIndex === 0;
+        let nextPoint = point;
+
+        if (isEnd) {
+          const snap = findLineEndSnap(point, event.altKey, line.id);
+          linePointDrag.snapTargetLineId = snap?.line.id;
+          if (snap) nextPoint = snap.point;
+        }
+
+        if (isStart) return { ...line, start: nextPoint };
+        if (isEnd) return { ...line, end: nextPoint, endSnapId: undefined };
+
+        const controls = [...(line.controlPoints ?? [])];
+        controls[linePointDrag.pointIndex - 1] = nextPoint;
+        return { ...line, controlPoints: controls, lineShape: "free" };
+      }));
+    }
+
     if (drawing) {
       const snap = findLineEndSnap(point, event.altKey);
       setDrawing({
@@ -1080,6 +1144,40 @@ export default function Home() {
   }
 
   function handleBoardPointerUp(event: ReactPointerEvent<SVGSVGElement>) {
+    const linePointDrag = linePointDragRef.current;
+    if (linePointDrag) {
+      const before = linePointDrag.snapshot;
+      const snapTargetLineId = linePointDrag.snapTargetLineId;
+      linePointDragRef.current = null;
+
+      setScenes((current) => {
+        const next = clone(current);
+        const scene = next[sceneIndex];
+        if (!scene) return current;
+
+        const edited = scene.lines.find((line) => line.id === linePointDrag.lineId);
+        if (!edited) return current;
+
+        if (snapTargetLineId) {
+          const target = scene.lines.find((line) => line.id === snapTargetLineId);
+          if (target) {
+            const snapId = target.endSnapId ?? makeId();
+            target.endSnapId = snapId;
+            edited.endSnapId = snapId;
+            edited.end = { ...target.end };
+          }
+        } else {
+          edited.endSnapId = undefined;
+        }
+
+        syncEditedLine(scene, edited.id);
+        return next;
+      });
+      snapshotForHistory(before);
+      setPlayhead(0);
+      setStatus(snapTargetLineId ? "Linjen er flyttet og snappet. Timing er beregnet på nytt." : "Linjen er flyttet. Timing er beregnet på nytt.");
+    }
+
     if (draggingId) {
       if (dragSnapshotRef.current) snapshotForHistory(dragSnapshotRef.current);
       dragSnapshotRef.current = null;
@@ -1131,7 +1229,11 @@ export default function Home() {
                 .sort((a, b) => (a.sequenceOrder ?? 0) - (b.sequenceOrder ?? 0))
             : [line];
           const path = sequenceLines.length > 0
-            ? [{ ...sequenceLines[0].start }, ...sequenceLines.map((item) => ({ ...item.end }))]
+            ? sequenceLines.reduce<Point[]>((all, item, index) => {
+                const points = linePoints(item);
+                all.push(...(index === 0 ? points : points.slice(1)));
+                return all;
+              }, [])
             : [drawing.start, end];
 
           actor.x = path[0].x;
@@ -1292,10 +1394,7 @@ export default function Home() {
         if (time < start) return lastPoint;
         if (time <= end) {
           const progress = clamp((time - start) / duration, 0, 1);
-          return {
-            x: line.start.x + (line.end.x - line.start.x) * progress,
-            y: line.start.y + (line.end.y - line.start.y) * progress,
-          };
+          return pointAlongPath(linePoints(line), progress);
         }
 
         lastPoint = { ...line.end };
@@ -1549,7 +1648,11 @@ export default function Home() {
     const actor = scene.objects.find((object) => object.id === actorId);
     if (!actor) return;
 
-    const path = [{ ...sequenceLines[0].start }, ...sequenceLines.map((line) => ({ ...line.end }))];
+    const path = sequenceLines.reduce<Point[]>((all, line, index) => {
+      const points = linePoints(line);
+      all.push(...(index === 0 ? points : points.slice(1)));
+      return all;
+    }, []);
     actor.x = path[0].x;
     actor.y = path[0].y;
     actor.target = undefined;
@@ -1557,6 +1660,103 @@ export default function Home() {
     actor.motionStart = 0;
     actor.motionDuration = lineAnimationDuration(kind, path);
     recalculateHiddenLineTiming(scene);
+  }
+
+  function syncEditedLine(scene: Scene, lineId: string) {
+    const edited = scene.lines.find((line) => line.id === lineId);
+    if (!edited) return;
+
+    if (edited.sequenceId && edited.animationKind && edited.actorId) {
+      rebuildAnimatedSequence(scene, edited.sequenceId);
+    } else {
+      recalculateHiddenLineTiming(scene);
+    }
+  }
+
+  function setSelectedLineShape(shape: "straight" | "free") {
+    if (!selectedLineId) return;
+    mutateCurrentScene((scene) => {
+      const line = scene.lines.find((item) => item.id === selectedLineId);
+      if (!line) return;
+
+      line.lineShape = shape;
+      if (shape === "straight") {
+        line.controlPoints = undefined;
+      } else if (!line.controlPoints?.length) {
+        line.controlPoints = [{
+          x: (line.start.x + line.end.x) / 2,
+          y: (line.start.y + line.end.y) / 2,
+        }];
+      }
+      syncEditedLine(scene, line.id);
+    });
+    setPlayhead(0);
+    setStatus(shape === "straight" ? "Linjen er gjort rett." : "Linjen er fri. Dra styrepunktene for å forme den.");
+  }
+
+  function addSelectedLineControlPoint() {
+    if (!selectedLineId) return;
+    mutateCurrentScene((scene) => {
+      const line = scene.lines.find((item) => item.id === selectedLineId);
+      if (!line) return;
+
+      const points = linePoints(line);
+      let longestIndex = 0;
+      let longestLength = -1;
+      for (let i = 0; i < points.length - 1; i += 1) {
+        const length = pointDistance(points[i], points[i + 1]);
+        if (length > longestLength) {
+          longestLength = length;
+          longestIndex = i;
+        }
+      }
+
+      const a = points[longestIndex];
+      const b = points[longestIndex + 1];
+      const nextPoint = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const controls = [...(line.controlPoints ?? [])];
+      controls.splice(longestIndex, 0, nextPoint);
+      line.controlPoints = controls;
+      line.lineShape = "free";
+      syncEditedLine(scene, line.id);
+    });
+    setPlayhead(0);
+    setStatus("Nytt styrepunkt er lagt på den lengste delen av linjen. Dra punktet dit du vil.");
+  }
+
+  function removeSelectedLineControlPoint() {
+    if (!selectedLineId || !selectedLine?.controlPoints?.length) return;
+    mutateCurrentScene((scene) => {
+      const line = scene.lines.find((item) => item.id === selectedLineId);
+      if (!line?.controlPoints?.length) return;
+      line.controlPoints = line.controlPoints.slice(0, -1);
+      if (line.controlPoints.length === 0) {
+        line.controlPoints = undefined;
+        line.lineShape = "straight";
+      }
+      syncEditedLine(scene, line.id);
+    });
+    setPlayhead(0);
+    setStatus("Siste styrepunkt er fjernet.");
+  }
+
+  function handleLinePointPointerDown(
+    event: ReactPointerEvent<SVGCircleElement>,
+    line: BoardLine,
+    pointIndex: number,
+  ) {
+    if (tool !== "select") return;
+    event.stopPropagation();
+    setSelectedLineId(line.id);
+    setSelectedId(null);
+    setContextMenu(null);
+    linePointDragRef.current = {
+      lineId: line.id,
+      pointIndex,
+      snapshot: clone(scenes),
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setStatus(pointIndex === linePoints(line).length - 1 ? "Flytter linjens endepunkt." : "Flytter linjepunkt.");
   }
 
   function deleteSelectedLine() {
@@ -2203,7 +2403,7 @@ export default function Home() {
                 onPointerDown={handleBoardPointerDown}
                 onPointerMove={handleBoardPointerMove}
                 onPointerUp={handleBoardPointerUp}
-                onPointerCancel={() => { setDraggingId(null); setDrawing(null); cancelFreehand(); panDragRef.current = null; }}
+                onPointerCancel={() => { setDraggingId(null); setDrawing(null); cancelFreehand(); linePointDragRef.current = null; panDragRef.current = null; }}
               >
                 <defs>
                   <marker id="arrowHead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="3.8" markerHeight="3.8" orient="auto-start-reverse">
@@ -2216,44 +2416,69 @@ export default function Home() {
                 {guideLinesVisible && lines.filter((line) => !line.hidden && lineTypeVisibility[line.type]).map((line) => {
                   const color = line.color ?? "#ffffff";
                   const isWhite = color.toLowerCase() === "#ffffff" || color.toLowerCase() === "#fff";
-                  const midX = (line.start.x + line.end.x) / 2;
-                  const midY = (line.start.y + line.end.y) / 2;
+                  const points = linePoints(line);
+                  const pointsString = linePathPointsString(line);
+                  const midpoint = pointAlongPath(points, 0.5);
+                  const selected = selectedLineId === line.id;
                   return (
                     <g key={line.id}>
-                      <line
+                      <polyline
                         className="lineHitArea"
-                        x1={line.start.x} y1={line.start.y} x2={line.end.x} y2={line.end.y}
-                        stroke="transparent" strokeWidth="18" strokeLinecap="round"
+                        points={pointsString}
+                        fill="none"
+                        stroke="transparent" strokeWidth="18" strokeLinecap="round" strokeLinejoin="round"
                         pointerEvents={tool === "select" ? "stroke" : "none"}
                         onPointerDown={(event) => handleLinePointerDown(event, line)}
                       />
-                      {selectedLineId === line.id && (
-                        <line
-                          x1={line.start.x} y1={line.start.y} x2={line.end.x} y2={line.end.y}
-                          stroke="#f7dd72" strokeWidth="6" strokeLinecap="round" opacity=".28"
+                      {selected && (
+                        <polyline
+                          points={pointsString}
+                          fill="none"
+                          stroke="#f7dd72" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" opacity=".28"
                           pointerEvents="none"
                         />
                       )}
-                      <line
+                      <polyline
                         className={`tacticLine ${isWhite ? "whiteLine" : ""}`}
-                        x1={line.start.x} y1={line.start.y} x2={line.end.x} y2={line.end.y}
-                        stroke={color} strokeWidth="2.3" strokeLinecap="round"
+                        points={pointsString}
+                        fill="none"
+                        stroke={color} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"
                         strokeDasharray={line.type === "run" ? "8 7" : line.type === "rotation" ? "3 6 13 6" : undefined}
                         markerEnd={line.type === "arrow" || line.type === "rotation" ? "url(#arrowHead)" : undefined}
                         opacity=".92"
                         pointerEvents="none"
                       />
                       {line.sequenceOrder ? (
-                        <g className="animationStepBadge" transform={`translate(${midX} ${midY})`}>
+                        <g className="animationStepBadge" transform={`translate(${midpoint.x} ${midpoint.y})`}>
                           <circle r="9" fill="#081511" stroke={color} strokeWidth="1.8" />
                           <text y="3.4" textAnchor="middle" fill={color} fontSize="8.5" fontWeight="950">{line.sequenceOrder}</text>
                         </g>
                       ) : line.type === "rotation" ? (
-                        <g className="rotationBadge" transform={`translate(${midX} ${midY})`}>
+                        <g className="rotationBadge" transform={`translate(${midpoint.x} ${midpoint.y})`}>
                           <circle r="8.5" fill="#081511" stroke={color} strokeWidth="1.8" />
                           <text y="3.2" textAnchor="middle" fill={color} fontSize="8" fontWeight="950">R</text>
                         </g>
                       ) : null}
+
+                      {selected && tool === "select" && points.map((point, pointIndex) => {
+                        const isEnd = pointIndex === points.length - 1;
+                        const isStart = pointIndex === 0;
+                        const lockedSequenceStart = isStart && Boolean(line.sequenceOrder && line.sequenceOrder > 1);
+                        if (lockedSequenceStart) return null;
+                        return (
+                          <circle
+                            key={`${line.id}-point-${pointIndex}`}
+                            className={`lineEditHandle ${isEnd ? "end" : isStart ? "start" : "control"}`}
+                            cx={point.x}
+                            cy={point.y}
+                            r={isEnd || isStart ? 7 : 6}
+                            fill={isEnd ? "#70f0a6" : isStart ? "#f7dd72" : "#081511"}
+                            stroke={isEnd || isStart ? "#081511" : "#70f0a6"}
+                            strokeWidth="2"
+                            onPointerDown={(event) => handleLinePointPointerDown(event, line, pointIndex)}
+                          />
+                        );
+                      })}
                     </g>
                   );
                 })}
@@ -2682,6 +2907,40 @@ export default function Home() {
                   {selectedLine.color && (
                     <button className="miniButton text" type="button" onClick={() => updateSelectedLineColor(undefined)}>↺ Standardfarge</button>
                   )}
+                </div>
+
+                <div className="inspectorGroup lineGeometryInspector">
+                  <div className="inspectorGroupTitle">Form på linjen</div>
+                  <div className="segmented small">
+                    <button
+                      type="button"
+                      className={!lineIsFree(selectedLine) ? "active" : ""}
+                      onClick={() => setSelectedLineShape("straight")}
+                    >
+                      ━ Rett
+                    </button>
+                    <button
+                      type="button"
+                      className={lineIsFree(selectedLine) ? "active" : ""}
+                      onClick={() => setSelectedLineShape("free")}
+                    >
+                      〰 Fri
+                    </button>
+                  </div>
+                  <div className="linePointActions">
+                    <button className="secondaryButton full" type="button" onClick={addSelectedLineControlPoint}>＋ Punkt</button>
+                    <button
+                      className="secondaryButton full"
+                      type="button"
+                      onClick={removeSelectedLineControlPoint}
+                      disabled={!selectedLine.controlPoints?.length}
+                    >
+                      − Siste punkt
+                    </button>
+                  </div>
+                  <p className="inspectorHelp">
+                    Velg «Fri» eller legg til punkter. Dra de små håndtakene på banen for å flytte start, slutt og styrepunkter.
+                  </p>
                 </div>
 
                 <div className="inspectorGroup">

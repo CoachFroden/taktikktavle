@@ -771,3 +771,16 @@ button:disabled { opacity: .38; cursor: not-allowed !important; transform: none 
   color: var(--muted);
   font-size: .61rem;
 }
+
+
+/* manual snap points */
+.manualSnapPoint {
+  cursor: grab;
+}
+.manualSnapPoint:active {
+  cursor: grabbing;
+}
+.manualSnapPoint circle,
+.manualSnapPoint path {
+  vector-effect: non-scaling-stroke;
+}

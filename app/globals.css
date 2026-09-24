@@ -784,3 +784,74 @@ button:disabled { opacity: .38; cursor: not-allowed !important; transform: none 
 .manualSnapPoint path {
   vector-effect: non-scaling-stroke;
 }
+
+
+/* automatic line colors + playback filters */
+.autoColorIcon {
+  background:
+    linear-gradient(135deg,
+      #f7dd72 0 33%,
+      #3a8bff 33% 66%,
+      #ff9f43 66% 100%);
+  color: #07120c;
+  text-shadow: 0 1px 1px rgba(255,255,255,.35);
+}
+
+.autoColorLegend {
+  gap: 6px;
+}
+
+.autoColorRow {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 9px;
+  background: rgba(255,255,255,.018);
+  color: #dfe8e4;
+  font-size: .69rem;
+  font-weight: 760;
+}
+
+.typeColorDot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--type-color, #fff);
+  box-shadow: 0 0 0 1px rgba(255,255,255,.16);
+}
+
+.playbackFilterLabel {
+  padding-left: 3px;
+  color: var(--muted);
+  font-size: .62rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.playbackTypeToggle {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 5px;
+}
+
+.lineVisibilityControls .playbackTypeToggle.active {
+  border-color: var(--type-color, rgba(112,240,166,.34));
+  background: color-mix(in srgb, var(--type-color, #70f0a6) 14%, transparent);
+  color: #f4f8f6;
+}
+
+@supports not (background: color-mix(in srgb, white 10%, transparent)) {
+  .lineVisibilityControls .playbackTypeToggle.active {
+    background: rgba(255,255,255,.08);
+  }
+}
+
+@media (max-width: 980px) {
+  .lineVisibilityControls {
+    flex-wrap: wrap;
+  }
+}

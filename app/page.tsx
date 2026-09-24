@@ -180,7 +180,6 @@ const toolGroups: Array<{
     title: "Bygg",
     icon: "＋",
     items: [
-      { id: "select", icon: "↖", label: "Velg", hint: "Flytt og rediger" },
       { id: "hand", icon: "✋", label: "Panorer", hint: "Flytt utsnitt" },
       { id: "blue", icon: "●", label: "Blå", hint: "Legg til spiller" },
       { id: "red", icon: "●", label: "Rød", hint: "Legg til spiller" },
@@ -2136,12 +2135,25 @@ export default function Home() {
             <div className="compactToolDockHeader">
               <div>
                 <span className="eyebrow">VERKTØY</span>
-                <strong>{toolGroups.flatMap((group) => group.items).find((item) => item.id === tool)?.label ?? "Velg verktøy"}</strong>
+                <strong>{tool === "select" ? "Velg" : toolGroups.flatMap((group) => group.items).find((item) => item.id === tool)?.label ?? "Velg verktøy"}</strong>
               </div>
               <span className={`animationModePill ${lineAnimationMode !== "off" ? "active" : ""}`}>
                 {lineAnimationMode === "off" ? "Vanlig" : lineAnimationMode === "pass" ? "Pasning" : lineAnimationMode === "run" ? "Løp" : "Rullering"}
               </span>
             </div>
+
+            <button
+              type="button"
+              className={`persistentSelectTool ${tool === "select" ? "active" : ""}`}
+              onClick={() => chooseTool("select")}
+              title="Velg, flytt og rediger objekter og linjer"
+            >
+              <span className="persistentSelectIcon">↖</span>
+              <span>
+                <strong>Velg</strong>
+                <small>Flytt og rediger</small>
+              </span>
+            </button>
 
             <div className="toolAccordion">
               {toolGroups.map((group) => {

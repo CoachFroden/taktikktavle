@@ -2269,7 +2269,18 @@ export default function Home() {
                 const activeItem = group.items.find((item) => item.id === tool);
                 const open = openToolPanel === group.title;
                 return (
-                  <section className={`toolDropdown ${open ? "open" : ""}`} key={group.title}>
+                  <section
+                    className={`toolDropdown ${open ? "open" : ""} ${
+                      group.title === "Bygg"
+                        ? "toolThemeBuild"
+                        : group.title === "Figurer"
+                          ? "toolThemeFigures"
+                          : group.title === "Tegn"
+                            ? "toolThemeDraw"
+                            : "toolThemeManual"
+                    }`}
+                    key={group.title}
+                  >
                     <button
                       type="button"
                       className="toolDropdownTrigger"
@@ -2305,7 +2316,7 @@ export default function Home() {
                 );
               })}
 
-              <section className={`toolDropdown ${openToolPanel === "Animasjon" ? "open" : ""}`}>
+              <section className={`toolDropdown toolThemeAnimation ${openToolPanel === "Animasjon" ? "open" : ""}`}>
                 <button
                   type="button"
                   className="toolDropdownTrigger"
@@ -2354,7 +2365,7 @@ export default function Home() {
                 )}
               </section>
 
-              <section className={`toolDropdown ${openToolPanel === "Synlighet" ? "open" : ""}`}>
+              <section className={`toolDropdown toolThemeVisibility ${openToolPanel === "Synlighet" ? "open" : ""}`}>
                 <button
                   type="button"
                   className="toolDropdownTrigger"
@@ -2415,7 +2426,7 @@ export default function Home() {
                 )}
               </section>
 
-              <section className={`toolDropdown ${openToolPanel === "Farge" ? "open" : ""}`}>
+              <section className={`toolDropdown toolThemeColors ${openToolPanel === "Farge" ? "open" : ""}`}>
                 <button
                   type="button"
                   className="toolDropdownTrigger"
@@ -2446,7 +2457,7 @@ export default function Home() {
                 )}
               </section>
 
-              <section className={`toolDropdown ${openToolPanel === "Startformasjon" ? "open" : ""}`}>
+              <section className={`toolDropdown toolThemeFormation ${openToolPanel === "Startformasjon" ? "open" : ""}`}>
                 <button
                   type="button"
                   className="toolDropdownTrigger"

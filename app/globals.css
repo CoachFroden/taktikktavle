@@ -1087,3 +1087,49 @@ button:disabled { opacity: .38; cursor: not-allowed !important; transform: none 
       linear-gradient(110deg, rgba(112,240,166,.095), rgba(255,255,255,.022) 58%);
   }
 }
+
+
+/* continuous playback loop */
+.loopButton {
+  min-height: 38px;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 10px;
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  background: rgba(255,255,255,.035);
+  color: #a9bbb5;
+  cursor: pointer;
+  font-weight: 820;
+  font-size: .68rem;
+  white-space: nowrap;
+  transition: border-color .16s ease, background .16s ease, color .16s ease;
+}
+
+.loopButton:first-letter {
+  font-size: .95rem;
+}
+
+.loopButton:hover {
+  border-color: rgba(112,240,166,.35);
+  color: #e7f6ed;
+}
+
+.loopButton.active {
+  border-color: rgba(112,240,166,.58);
+  background: rgba(112,240,166,.12);
+  color: #dfffea;
+  box-shadow: inset 0 0 0 1px rgba(112,240,166,.04);
+}
+
+@media (max-width: 760px) {
+  .loopButton span {
+    display: none;
+  }
+  .loopButton {
+    width: 38px;
+    padding: 0;
+  }
+}

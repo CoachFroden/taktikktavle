@@ -605,3 +605,89 @@ button:disabled { opacity: .38; cursor: not-allowed !important; transform: none 
 @media (max-width: 620px) {
   .toolAccordion { grid-template-columns: 1fr; }
 }
+
+
+/* visibility controls */
+.visibilityPanel { gap: 10px; }
+.visibilityGroup { display: grid; gap: 6px; }
+.visibilityHeading {
+  color: var(--muted);
+  font-size: .63rem;
+  font-weight: 850;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.visibilityHeadingRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.visibilityToggle {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: rgba(255,255,255,.022);
+  color: #dfe8e4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  cursor: pointer;
+  font-size: .70rem;
+  text-align: left;
+}
+.visibilityToggle b {
+  flex: 0 0 auto;
+  font-size: .60rem;
+  color: var(--muted);
+}
+.visibilityToggle.on {
+  border-color: rgba(112,240,166,.28);
+  background: rgba(112,240,166,.06);
+}
+.visibilityToggle.on b { color: #a9f5c6; }
+.visibilityToggle.off {
+  opacity: .68;
+  border-style: dashed;
+}
+.hiddenItemList {
+  display: grid;
+  gap: 5px;
+  max-height: 190px;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.hiddenItemRow {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 8px;
+  background: rgba(255,255,255,.018);
+  color: #cad8d2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+  text-align: left;
+  font-size: .67rem;
+}
+.hiddenItemRow span {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.hiddenItemRow b {
+  flex: 0 0 auto;
+  color: #a9f5c6;
+  font-size: .62rem;
+}
+.hiddenItemRow:hover {
+  border-color: rgba(112,240,166,.3);
+  background: rgba(112,240,166,.05);
+}

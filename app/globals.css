@@ -691,3 +691,32 @@ button:disabled { opacity: .38; cursor: not-allowed !important; transform: none 
   border-color: rgba(112,240,166,.3);
   background: rgba(112,240,166,.05);
 }
+
+
+/* editable tactical lines */
+.lineEditHandle {
+  cursor: grab;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,.45));
+}
+.lineEditHandle:active { cursor: grabbing; }
+.lineEditHandle.control { fill: #081511; }
+.lineEditHandle.start { fill: #f7dd72; }
+.lineEditHandle.end { fill: #70f0a6; }
+
+.lineGeometryInspector { gap: 8px; }
+.lineGeometryInspector .segmented { width: 100%; }
+.lineGeometryInspector .segmented button { flex: 1 1 0; }
+.linePointActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+.linePointActions .secondaryButton:disabled {
+  opacity: .38;
+  cursor: default;
+}
+
+@media (max-width: 620px) {
+  .linePointActions { grid-template-columns: 1fr; }
+}

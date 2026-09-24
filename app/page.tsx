@@ -21,7 +21,8 @@ type ObjectType =
   | "gate"
   | "zone"
   | "circleShape"
-  | "semicircle";
+  | "semicircle"
+  | "snapPoint";
 type PitchType = "11er" | "9er" | "7er" | "5er";
 type PitchView = "full" | "half" | "third" | "box";
 type LineAnimationMode = "off" | "pass" | "run" | "rotation";
@@ -47,7 +48,8 @@ type Tool =
   | "rotation"
   | "movement"
   | "freeMovement"
-  | "pass";
+  | "pass"
+  | "snapPoint";
 
 type BoardObject = {
   id: string;
@@ -103,6 +105,7 @@ type DrawingLine = {
   animationKind?: Exclude<LineAnimationMode, "off">;
   actorId?: string;
   snapTargetLineId?: string;
+  snapTargetObjectId?: string;
   startAfterLineId?: string;
 };
 
@@ -123,6 +126,7 @@ type LinePointDrag = {
   pointIndex: number;
   snapshot: Scene[];
   snapTargetLineId?: string;
+  snapTargetObjectId?: string;
 };
 
 type FormationId = "433" | "442" | "343" | "332" | "231" | "121";
@@ -210,6 +214,7 @@ const toolGroups: Array<{
       { id: "arrow", icon: "➜", label: "Pasning", hint: "Heltrukket pil / pasning" },
       { id: "run", icon: "⋯", label: "Løp", hint: "Stiplet løpslinje" },
       { id: "rotation", icon: "↻", label: "Rullering", hint: "Neste stasjon / rullering" },
+      { id: "snapPoint", icon: "⊙", label: "Snap-punkt", hint: "Plasser et fast synkroniseringspunkt" },
     ],
   },
   {
@@ -285,6 +290,10 @@ function linePathPointsString(line: BoardLine) {
   return linePoints(line).map((point) => `${point.x},${point.y}`).join(" ");
 }
 
+function manualSnapId(objectId: string) {
+  return `manual:${objectId}`;
+}
+
 function objectEndPoint(object: BoardObject): Point {
   if (object.motionPath && object.motionPath.length > 1) return object.motionPath[object.motionPath.length - 1];
   if (object.target) return object.target;
@@ -314,6 +323,7 @@ function defaultObjectColor(object: BoardObject) {
   if (object.type === "player") return object.team === "red" ? "#ff5c6c" : "#3a8bff";
   if (object.type === "ball") return "#ffffff";
   if (object.type === "cone") return "#ff9f43";
+  if (object.type === "snapPoint") return "#70f0a6";
   if (object.type === "mannequin") return "#f0b84b";
   if (object.type === "miniGoal") return "#f6f8f7";
   if (object.type === "ladder") return "#f7dd72";
@@ -341,6 +351,7 @@ function contrastColor(hex: string) {
 function motionLabel(object: BoardObject) {
   if (object.type === "ball") return "Ball";
   if (object.type === "cone") return "Kjegle";
+  if (object.type === "snapPoint") return "Snap-punkt";
   if (figureLabels[object.type]) return figureLabels[object.type] as string;
   if (object.name) return object.name;
   if (object.role === "keeper") return (object.team === "blue" ? "Blå" : "Rød") + " keeper";
@@ -432,7 +443,7 @@ export default function Home() {
       else groups.set(line.endSnapId, { point: { ...line.end }, count: 1 });
     }
     return Array.from(groups.entries())
-      .filter(([, value]) => value.count >= 2)
+      .filter(([id, value]) => value.count >= 2 && !id.startsWith("manual:"))
       .map(([id, value]) => ({ id, ...value }));
   }, [lines, lineTypeVisibility]);
 
@@ -535,24 +546,36 @@ export default function Home() {
   }
 
   function findLineEndSnap(point: Point, disabled = false, excludeLineId?: string) {
-    if (disabled || lines.length === 0) return null;
+    if (disabled) return null;
     const threshold = lineSnapThreshold();
-    let best: BoardLine | null = null;
+    let best:
+      | { kind: "line"; line: BoardLine; point: Point; distance: number }
+      | { kind: "object"; object: BoardObject; point: Point; distance: number }
+      | null = null;
     let bestDistance = threshold;
+
+    for (const object of objects) {
+      if (object.type !== "snapPoint" || object.hidden) continue;
+      const distance = pointDistance(point, object);
+      if (distance <= bestDistance) {
+        best = { kind: "object", object, point: { x: object.x, y: object.y }, distance };
+        bestDistance = distance;
+      }
+    }
 
     for (const line of lines) {
       if (line.id === excludeLineId || line.hidden || !lineTypeVisibility[line.type]) continue;
       const distance = pointDistance(point, line.end);
       if (
         distance < bestDistance ||
-        (Math.abs(distance - bestDistance) < 0.001 && line.endSnapId && !best?.endSnapId)
+        (Math.abs(distance - bestDistance) < 0.001 && line.endSnapId && best?.kind === "line" && !best.line.endSnapId)
       ) {
-        best = line;
+        best = { kind: "line", line, point: { ...line.end }, distance };
         bestDistance = distance;
       }
     }
 
-    return best ? { line: best, point: { ...best.end }, distance: bestDistance } : null;
+    return best;
   }
 
   function resetView(nextView = pitchView) {
@@ -953,6 +976,7 @@ export default function Home() {
       arrow: "Dra fra start til slutt for å tegne en pasningspil.",
       run: "Dra fra start til slutt for å tegne en stiplet løpslinje.",
       rotation: "Dra fra spiller/stasjon til neste plass i rulleringen.",
+      snapPoint: "Trykk på banen der du vil plassere et fast snap-punkt.",
     };
     setStatus(messages[nextTool] ?? "Trykk på banen for å plassere objektet.");
   }
@@ -978,6 +1002,8 @@ export default function Home() {
       next = { id: makeId(), type: "ball", ...point };
     } else if (tool === "cone") {
       next = { id: makeId(), type: "cone", ...point };
+    } else if (tool === "snapPoint") {
+      next = { id: makeId(), type: "snapPoint", ...point };
     } else if (["mannequin", "miniGoal", "ladder", "hurdle", "gate", "zone", "circleShape", "semicircle"].includes(tool)) {
       next = {
         id: makeId(),
@@ -1008,7 +1034,7 @@ export default function Home() {
       return;
     }
 
-    if (["blue", "red", "keeperBlue", "keeperRed", "ball", "cone", "mannequin", "miniGoal", "ladder", "hurdle", "gate", "zone", "circleShape", "semicircle"].includes(tool)) {
+    if (["blue", "red", "keeperBlue", "keeperRed", "ball", "cone", "snapPoint", "mannequin", "miniGoal", "ladder", "hurdle", "gate", "zone", "circleShape", "semicircle"].includes(tool)) {
       addObject(point);
       return;
     }
@@ -1056,7 +1082,24 @@ export default function Home() {
 
     if (draggingId && tool === "select") {
       setPlayhead(0);
-      updateCurrentObjectsWithoutHistory((items) => items.map((object) => object.id === draggingId ? { ...object, x: point.x, y: point.y } : object));
+      const draggingObject = objects.find((object) => object.id === draggingId);
+      if (draggingObject?.type === "snapPoint") {
+        setScenes((current) => current.map((scene, index) => {
+          if (index !== sceneIndex) return scene;
+          const nextScene = clone(scene);
+          nextScene.objects = nextScene.objects.map((object) =>
+            object.id === draggingId ? { ...object, x: point.x, y: point.y } : object
+          );
+          const snapId = manualSnapId(draggingId);
+          nextScene.lines = nextScene.lines.map((line) =>
+            line.endSnapId === snapId ? { ...line, end: { x: point.x, y: point.y } } : line
+          );
+          recalculateHiddenLineTiming(nextScene);
+          return nextScene;
+        }));
+      } else {
+        updateCurrentObjectsWithoutHistory((items) => items.map((object) => object.id === draggingId ? { ...object, x: point.x, y: point.y } : object));
+      }
     }
 
     const linePointDrag = linePointDragRef.current;
@@ -1072,7 +1115,8 @@ export default function Home() {
 
         if (isEnd) {
           const snap = findLineEndSnap(point, event.altKey, line.id);
-          linePointDrag.snapTargetLineId = snap?.line.id;
+          linePointDrag.snapTargetLineId = snap?.kind === "line" ? snap.line.id : undefined;
+          linePointDrag.snapTargetObjectId = snap?.kind === "object" ? snap.object.id : undefined;
           if (snap) nextPoint = snap.point;
         }
 
@@ -1090,7 +1134,8 @@ export default function Home() {
       setDrawing({
         ...drawing,
         current: snap ? snap.point : point,
-        snapTargetLineId: snap?.line.id,
+        snapTargetLineId: snap?.kind === "line" ? snap.line.id : undefined,
+        snapTargetObjectId: snap?.kind === "object" ? snap.object.id : undefined,
       });
     }
 
@@ -1147,6 +1192,7 @@ export default function Home() {
     if (linePointDrag) {
       const before = linePointDrag.snapshot;
       const snapTargetLineId = linePointDrag.snapTargetLineId;
+      const snapTargetObjectId = linePointDrag.snapTargetObjectId;
       linePointDragRef.current = null;
 
       setScenes((current) => {
@@ -1157,7 +1203,13 @@ export default function Home() {
         const edited = scene.lines.find((line) => line.id === linePointDrag.lineId);
         if (!edited) return current;
 
-        if (snapTargetLineId) {
+        if (snapTargetObjectId) {
+          const target = scene.objects.find((object) => object.id === snapTargetObjectId && object.type === "snapPoint");
+          if (target) {
+            edited.endSnapId = manualSnapId(target.id);
+            edited.end = { x: target.x, y: target.y };
+          }
+        } else if (snapTargetLineId) {
           const target = scene.lines.find((line) => line.id === snapTargetLineId);
           if (target) {
             const snapId = target.endSnapId ?? makeId();
@@ -1174,7 +1226,11 @@ export default function Home() {
       });
       snapshotForHistory(before);
       setPlayhead(0);
-      setStatus(snapTargetLineId ? "Linjen er flyttet og snappet. Timing er beregnet på nytt." : "Linjen er flyttet. Timing er beregnet på nytt.");
+      setStatus(
+        snapTargetLineId || snapTargetObjectId
+          ? "Linjen er flyttet og snappet. Timing er beregnet på nytt."
+          : "Linjen er flyttet. Timing er beregnet på nytt.",
+      );
     }
 
     if (draggingId) {
@@ -1189,7 +1245,11 @@ export default function Home() {
       const rawEnd = boardPoint(event);
       const snap = findLineEndSnap(rawEnd, event.altKey);
       const end = snap ? snap.point : rawEnd;
-      const snapId = snap ? (snap.line.endSnapId ?? makeId()) : undefined;
+      const snapId = snap
+        ? snap.kind === "object"
+          ? manualSnapId(snap.object.id)
+          : (snap.line.endSnapId ?? makeId())
+        : undefined;
 
       if (pointDistance(drawing.start, end) > 10) {
         const line: BoardLine = {
@@ -1207,7 +1267,7 @@ export default function Home() {
         };
 
         mutateCurrentScene((scene) => {
-          if (snap && snapId) {
+          if (snap && snapId && snap.kind === "line") {
             const target = scene.lines.find((item) => item.id === snap.line.id);
             if (target && !target.endSnapId) target.endSnapId = snapId;
           }
@@ -1802,8 +1862,16 @@ export default function Home() {
 
   function deleteSelected() {
     if (!selectedId) return;
+    const objectToDelete = objects.find((object) => object.id === selectedId);
     mutateCurrentScene((scene) => {
       scene.objects = scene.objects.filter((object) => object.id !== selectedId);
+      if (objectToDelete?.type === "snapPoint") {
+        const snapId = manualSnapId(selectedId);
+        scene.lines = scene.lines.map((line) =>
+          line.endSnapId === snapId ? { ...line, endSnapId: undefined } : line
+        );
+        recalculateHiddenLineTiming(scene);
+      }
     });
     setSelectedId(null);
     setSelectedLineId(null);
@@ -2511,7 +2579,7 @@ export default function Home() {
                       markerEnd={drawing.type === "arrow" || drawing.type === "rotation" ? "url(#arrowHead)" : undefined}
                       opacity=".96"
                     />
-                    {drawing.snapTargetLineId && (
+                    {(drawing.snapTargetLineId || drawing.snapTargetObjectId) && (
                       <g className="snapPreview" transform={`translate(${drawing.current.x} ${drawing.current.y})`} pointerEvents="none">
                         <circle r="17" fill="rgba(112,240,166,.10)" stroke="#70f0a6" strokeWidth="2.4" />
                         <circle r="5" fill="#70f0a6" />
@@ -2564,6 +2632,28 @@ export default function Home() {
                   const cursor = tool === "select" ? "grab" : tool === "freeMovement" ? "crosshair" : tool === "hand" ? "grab" : "pointer";
                   const objectColor = object.color ?? defaultObjectColor(object);
                   const objectContrast = contrastColor(objectColor);
+
+                  if (object.type === "snapPoint") {
+                    if (!guideLinesVisible) return null;
+                    return (
+                      <g
+                        key={object.id}
+                        data-board-object="true"
+                        className="manualSnapPoint"
+                        transform={`translate(${point.x} ${point.y})`}
+                        opacity={dimmed ? .58 : 1}
+                        onPointerDown={(event) => handleObjectPointerDown(event, object)}
+                        onContextMenu={(event) => handleObjectContextMenu(event, object)}
+                        style={{ cursor }}
+                      >
+                        <circle className="touchTarget" r="22" fill="transparent" />
+                        {selected && <circle r="16" fill="rgba(247,221,114,.08)" stroke="#f7dd72" strokeWidth="2" />}
+                        <circle r="9" fill="#081511" stroke="#70f0a6" strokeWidth="2.4" />
+                        <circle r="3" fill="#70f0a6" />
+                        <path d="M-13 0 H-7 M7 0 H13 M0 -13 V-7 M0 7 V13" stroke="#70f0a6" strokeWidth="1.6" strokeLinecap="round" />
+                      </g>
+                    );
+                  }
 
                   if (object.type === "ball") {
                     return (
@@ -2795,7 +2885,7 @@ export default function Home() {
                       : "Ingen valgt"}
                 </strong>
               </div>
-              {selectedObject && <span className={`teamChip ${selectedObject.team ?? "neutral"}`}>{selectedObject.type === "player" ? (selectedObject.team === "blue" ? "BLÅ" : "RØD") : selectedObject.type.toUpperCase()}</span>}
+              {selectedObject && <span className={`teamChip ${selectedObject.team ?? "neutral"}`}>{selectedObject.type === "player" ? (selectedObject.team === "blue" ? "BLÅ" : "RØD") : selectedObject.type === "snapPoint" ? "SNAP" : selectedObject.type.toUpperCase()}</span>}
               {selectedLine && <span className="teamChip neutral">{selectedLine.type === "arrow" ? "PASNING" : selectedLine.type === "run" ? "LØP" : "RULLERING"}</span>}
             </div>
 
@@ -2833,6 +2923,15 @@ export default function Home() {
                   )}
                 </div>
 
+                {selectedObject.type === "snapPoint" && (
+                  <div className="inspectorGroup">
+                    <div className="inspectorGroupTitle">Snap-punkt</div>
+                    <p className="inspectorHelp">
+                      Linjeender som legges nær dette punktet snapper hit og bruker samme synkroniseringspunkt. Dra punktet med Velg for å flytte alle tilkoblede endepunkter samtidig.
+                    </p>
+                  </div>
+                )}
+
                 {selectedObject.type === "player" && (
                   <div className="inspectorGroup">
                     <div className="inspectorGroupTitle">Spiller</div>
@@ -2857,8 +2956,12 @@ export default function Home() {
                 )}
 
                 <div className="quickActions">
-                  <button type="button" onClick={() => chooseTool("movement")}>◎ Rett</button>
-                  <button type="button" onClick={() => chooseTool("freeMovement")}>〰 Fri</button>
+                  {selectedObject.type !== "snapPoint" && (
+                    <>
+                      <button type="button" onClick={() => chooseTool("movement")}>◎ Rett</button>
+                      <button type="button" onClick={() => chooseTool("freeMovement")}>〰 Fri</button>
+                    </>
+                  )}
                   <button type="button" onClick={duplicateSelected}>⧉ Kopi</button>
                   <button type="button" onClick={hideSelectedObject}>◌ Skjul</button>
                   <button type="button" className="dangerText" onClick={deleteSelected}>⌫ Slett</button>

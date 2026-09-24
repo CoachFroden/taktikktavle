@@ -162,10 +162,12 @@ const lineColors = [
 
 const toolGroups: Array<{
   title: string;
+  icon: string;
   items: Array<{ id: Tool; icon: string; label: string; hint: string }>;
 }> = [
   {
     title: "Bygg",
+    icon: "＋",
     items: [
       { id: "select", icon: "↖", label: "Velg", hint: "Flytt og rediger" },
       { id: "hand", icon: "✋", label: "Panorer", hint: "Flytt utsnitt" },
@@ -179,6 +181,7 @@ const toolGroups: Array<{
   },
   {
     title: "Figurer",
+    icon: "◇",
     items: [
       { id: "mannequin", icon: "♟", label: "Dukke", hint: "Forsvarsdukke / mannequin" },
       { id: "miniGoal", icon: "⌑", label: "Minimål", hint: "Lite treningsmål" },
@@ -191,19 +194,20 @@ const toolGroups: Array<{
     ],
   },
   {
-    title: "Animer",
-    items: [
-      { id: "movement", icon: "◎", label: "Rett", hint: "A → B" },
-      { id: "freeMovement", icon: "〰", label: "Fri", hint: "Tegn løpsbanen" },
-      { id: "pass", icon: "⇢", label: "Pasning", hint: "Spiller → spiller" },
-    ],
-  },
-  {
     title: "Tegn",
+    icon: "✎",
     items: [
       { id: "arrow", icon: "➜", label: "Pasning", hint: "Heltrukket pil / pasning" },
       { id: "run", icon: "⋯", label: "Løp", hint: "Stiplet løpslinje" },
       { id: "rotation", icon: "↻", label: "Rullering", hint: "Neste stasjon / rullering" },
+    ],
+  },
+  {
+    title: "Manuell bevegelse",
+    icon: "◎",
+    items: [
+      { id: "movement", icon: "◎", label: "Rett", hint: "Enkel bevegelse A → B" },
+      { id: "freeMovement", icon: "〰", label: "Fri", hint: "Tegn en fri bevegelsesbane" },
     ],
   },
 ];
@@ -366,6 +370,7 @@ export default function Home() {
   const [passFromId, setPassFromId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [pendingSequenceDirection, setPendingSequenceDirection] = useState<1 | -1 | null>(null);
+  const [openToolPanel, setOpenToolPanel] = useState<string | null>("Bygg");
 
   const currentScene = scenes[sceneIndex] ?? scenes[0];
   const objects = currentScene?.objects ?? [];
@@ -1858,96 +1863,171 @@ export default function Home() {
       <div className="studioGrid">
         {!presentationMode && (
           <aside className="glassPanel toolDock">
-            {toolGroups.map((group) => (
-              <section className="toolSection" key={group.title}>
-                <div className="sectionLabel">{group.title}</div>
-                <div className="toolButtons">
-                  {group.items.map((item) => (
+            <div className="compactToolDockHeader">
+              <div>
+                <span className="eyebrow">VERKTØY</span>
+                <strong>{toolGroups.flatMap((group) => group.items).find((item) => item.id === tool)?.label ?? "Velg verktøy"}</strong>
+              </div>
+              <span className={`animationModePill ${lineAnimationMode !== "off" ? "active" : ""}`}>
+                {lineAnimationMode === "off" ? "Vanlig" : lineAnimationMode === "pass" ? "Pasning" : lineAnimationMode === "run" ? "Løp" : "Rullering"}
+              </span>
+            </div>
+
+            <div className="toolAccordion">
+              {toolGroups.map((group) => {
+                const activeItem = group.items.find((item) => item.id === tool);
+                const open = openToolPanel === group.title;
+                return (
+                  <section className={`toolDropdown ${open ? "open" : ""}`} key={group.title}>
                     <button
-                      key={item.id}
                       type="button"
-                      className={`studioTool ${tool === item.id ? "active" : ""} ${item.id === "blue" || item.id === "keeperBlue" ? "blueTool" : ""} ${item.id === "red" || item.id === "keeperRed" ? "redTool" : ""}`}
-                      onClick={() => chooseTool(item.id)}
-                      title={item.hint}
+                      className="toolDropdownTrigger"
+                      onClick={() => setOpenToolPanel(open ? null : group.title)}
+                      aria-expanded={open}
                     >
-                      <span className="toolIcon">{item.icon}</span>
-                      <span>{item.label}</span>
+                      <span className="dropdownIcon">{group.icon}</span>
+                      <span className="dropdownTitle">
+                        <strong>{group.title}</strong>
+                        <small>{activeItem ? activeItem.label : group.title === "Manuell bevegelse" ? "Rett eller fri bane" : "Trykk for å åpne"}</small>
+                      </span>
+                      <span className="dropdownChevron">{open ? "⌃" : "⌄"}</span>
                     </button>
-                  ))}
-                </div>
-              </section>
-            ))}
+                    {open && (
+                      <div className="toolDropdownBody">
+                        <div className="toolButtons compactToolButtons">
+                          {group.items.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              className={`studioTool ${tool === item.id ? "active" : ""} ${item.id === "blue" || item.id === "keeperBlue" ? "blueTool" : ""} ${item.id === "red" || item.id === "keeperRed" ? "redTool" : ""}`}
+                              onClick={() => chooseTool(item.id)}
+                              title={item.hint}
+                            >
+                              <span className="toolIcon">{item.icon}</span>
+                              <span>{item.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                );
+              })}
 
-            <section className="toolSection animationLineSection">
-              <div className="sectionLabel">Animasjon fra linjer</div>
-              <select className="darkSelect" value={lineAnimationMode} onChange={(event) => changeLineAnimationMode(event.target.value as LineAnimationMode)}>
-                <option value="off">Av · vanlig tegning</option>
-                <option value="pass">Pasning · ball følger linjene</option>
-                <option value="run">Løp · valgt spiller følger</option>
-                <option value="rotation">Rullering · valgt spiller følger</option>
-              </select>
-              {lineAnimationMode === "off" && lastAnimatedLine && (
+              <section className={`toolDropdown ${openToolPanel === "Animasjon" ? "open" : ""}`}>
                 <button
-                  className="secondaryButton full"
                   type="button"
-                  onClick={() => resumeLineAnimationSequence(lastAnimatedLine)}
+                  className="toolDropdownTrigger"
+                  onClick={() => setOpenToolPanel(openToolPanel === "Animasjon" ? null : "Animasjon")}
+                  aria-expanded={openToolPanel === "Animasjon"}
                 >
-                  ↪ Fortsett siste animasjon
+                  <span className="dropdownIcon">▶</span>
+                  <span className="dropdownTitle">
+                    <strong>Animasjon</strong>
+                    <small>{lineAnimationMode === "off" ? "Av · vanlig tegning" : lineAnimationMode === "pass" ? "Pasning · ball" : lineAnimationMode === "run" ? "Løp · spiller" : "Rullering · spiller"}</small>
+                  </span>
+                  <span className="dropdownChevron">{openToolPanel === "Animasjon" ? "⌃" : "⌄"}</span>
                 </button>
-              )}
-              {lineAnimationMode !== "off" && (
-                <div className="lineAnimationBuilder">
-                  <div>
-                    <strong>Steg {lineAnimationStep + 1}</strong>
-                    <span>
-                      {lineAnimationMode === "pass"
-                        ? "Ball"
-                        : lineAnimationActorId
-                          ? motionLabel(objects.find((object) => object.id === lineAnimationActorId) ?? { id: "", type: "player", x: 0, y: 0, team: "blue" })
-                          : "Velg spiller"}
-                    </span>
+                {openToolPanel === "Animasjon" && (
+                  <div className="toolDropdownBody animationLineSection">
+                    <select className="darkSelect" value={lineAnimationMode} onChange={(event) => changeLineAnimationMode(event.target.value as LineAnimationMode)}>
+                      <option value="off">Av · vanlig tegning</option>
+                      <option value="pass">Pasning · ball følger linjene</option>
+                      <option value="run">Løp · valgt spiller følger</option>
+                      <option value="rotation">Rullering · valgt spiller følger</option>
+                    </select>
+                    {lineAnimationMode === "off" && lastAnimatedLine && (
+                      <button className="secondaryButton full" type="button" onClick={() => resumeLineAnimationSequence(lastAnimatedLine)}>
+                        ↪ Fortsett siste animasjon
+                      </button>
+                    )}
+                    {lineAnimationMode !== "off" && (
+                      <div className="lineAnimationBuilder">
+                        <div>
+                          <strong>Steg {lineAnimationStep + 1}</strong>
+                          <span>
+                            {lineAnimationMode === "pass"
+                              ? "Ball"
+                              : lineAnimationActorId
+                                ? motionLabel(objects.find((object) => object.id === lineAnimationActorId) ?? { id: "", type: "player", x: 0, y: 0, team: "blue" })
+                                : "Velg spiller"}
+                          </span>
+                        </div>
+                        <button className="miniButton text" type="button" onClick={() => resetLineAnimationSequence()}>＋ Ny sekvens</button>
+                      </div>
+                    )}
+                    <small className="lineColorHint">
+                      Bruk Pasning, Løp eller Rullering under «Tegn». Snap til samme endepunkt synkroniserer ankomsten.
+                    </small>
                   </div>
-                  <button className="miniButton text" type="button" onClick={() => resetLineAnimationSequence()}>＋ Ny sekvens</button>
-                </div>
-              )}
-              <small className="lineColorHint">
-                Nye linjer blir automatisk steg 1, 2, 3 … og spilles i samme rekkefølge. Dra nær et eksisterende endepunkt for å snappe og synkronisere ankomsten.
-              </small>
-            </section>
+                )}
+              </section>
 
-            <section className="toolSection lineColorSection">
-              <div className="sectionLabel">Linjefarge</div>
-              <div className="lineColorPalette" aria-label="Velg linjefarge">
-                {lineColors.map((item) => (
-                  <button
-                    key={item.value}
-                    type="button"
-                    className={`lineColorSwatch ${lineColor.toLowerCase() === item.value ? "active" : ""}`}
-                    style={{ "--swatch": item.value } as CSSProperties}
-                    onClick={() => setLineColor(item.value)}
-                    title={item.label}
-                    aria-label={item.label}
-                  />
-                ))}
-                <label className="customColor" title="Velg egen farge">
-                  <span>+</span>
-                  <input type="color" value={lineColor} onChange={(event) => setLineColor(event.target.value)} aria-label="Egen linjefarge" />
-                </label>
-              </div>
-              <small className="lineColorHint">Brukes på nye pasnings-, løps- og rulleringslinjer.</small>
-            </section>
+              <section className={`toolDropdown ${openToolPanel === "Farge" ? "open" : ""}`}>
+                <button
+                  type="button"
+                  className="toolDropdownTrigger"
+                  onClick={() => setOpenToolPanel(openToolPanel === "Farge" ? null : "Farge")}
+                  aria-expanded={openToolPanel === "Farge"}
+                >
+                  <span className="dropdownIcon colorDot" style={{ "--current-line-color": lineColor } as CSSProperties}>●</span>
+                  <span className="dropdownTitle">
+                    <strong>Linjefarge</strong>
+                    <small>Farge på nye linjer</small>
+                  </span>
+                  <span className="dropdownChevron">{openToolPanel === "Farge" ? "⌃" : "⌄"}</span>
+                </button>
+                {openToolPanel === "Farge" && (
+                  <div className="toolDropdownBody lineColorSection">
+                    <div className="lineColorPalette" aria-label="Velg linjefarge">
+                      {lineColors.map((item) => (
+                        <button
+                          key={item.value}
+                          type="button"
+                          className={`lineColorSwatch ${lineColor.toLowerCase() === item.value ? "active" : ""}`}
+                          style={{ "--swatch": item.value } as CSSProperties}
+                          onClick={() => setLineColor(item.value)}
+                          title={item.label}
+                          aria-label={item.label}
+                        />
+                      ))}
+                      <label className="customColor" title="Velg egen farge">
+                        <span>+</span>
+                        <input type="color" value={lineColor} onChange={(event) => setLineColor(event.target.value)} aria-label="Egen linjefarge" />
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </section>
 
-            <section className="toolSection formationSection">
-              <div className="sectionLabel">Startformasjon</div>
-              <select className="darkSelect" value={formation} onChange={(event) => setFormation(event.target.value as FormationId)}>
-                {formations.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-              </select>
-              <div className="segmented small">
-                <button type="button" className={formationTeam === "blue" ? "active" : ""} onClick={() => setFormationTeam("blue")}>Blå</button>
-                <button type="button" className={formationTeam === "red" ? "active" : ""} onClick={() => setFormationTeam("red")}>Rød</button>
-              </div>
-              <button className="secondaryButton full" type="button" onClick={applyFormationPreset}>Legg inn formasjon</button>
-            </section>
+              <section className={`toolDropdown ${openToolPanel === "Startformasjon" ? "open" : ""}`}>
+                <button
+                  type="button"
+                  className="toolDropdownTrigger"
+                  onClick={() => setOpenToolPanel(openToolPanel === "Startformasjon" ? null : "Startformasjon")}
+                  aria-expanded={openToolPanel === "Startformasjon"}
+                >
+                  <span className="dropdownIcon">▦</span>
+                  <span className="dropdownTitle">
+                    <strong>Startformasjon</strong>
+                    <small>{formations.find((item) => item.id === formation)?.label ?? formation}</small>
+                  </span>
+                  <span className="dropdownChevron">{openToolPanel === "Startformasjon" ? "⌃" : "⌄"}</span>
+                </button>
+                {openToolPanel === "Startformasjon" && (
+                  <div className="toolDropdownBody formationSection">
+                    <select className="darkSelect" value={formation} onChange={(event) => setFormation(event.target.value as FormationId)}>
+                      {formations.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+                    </select>
+                    <div className="segmented small">
+                      <button type="button" className={formationTeam === "blue" ? "active" : ""} onClick={() => setFormationTeam("blue")}>Blå</button>
+                      <button type="button" className={formationTeam === "red" ? "active" : ""} onClick={() => setFormationTeam("red")}>Rød</button>
+                    </div>
+                    <button className="secondaryButton full" type="button" onClick={applyFormationPreset}>Legg inn formasjon</button>
+                  </div>
+                )}
+              </section>
+            </div>
           </aside>
         )}
 

@@ -389,6 +389,7 @@ export default function Home() {
   const panDragRef = useRef<PanDrag | null>(null);
   const linePointDragRef = useRef<LinePointDrag | null>(null);
   const sequenceRef = useRef(false);
+  const loopPlaybackRef = useRef(false);
 
   const [title, setTitle] = useState("Ny taktikk");
   const [pitch, setPitch] = useState<PitchType>("11er");
@@ -405,6 +406,7 @@ export default function Home() {
   const [historyFuture, setHistoryFuture] = useState<Scene[][]>([]);
   const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [loopPlayback, setLoopPlayback] = useState(false);
   const [showGuideLines, setShowGuideLines] = useState(true);
   const [lineTypeVisibility, setLineTypeVisibility] = useState<Record<BoardLine["type"], boolean>>({
     arrow: true,
@@ -1524,7 +1526,13 @@ export default function Home() {
     animationStartRef.current = performance.now();
     setPlayhead(startHead);
     setIsPlaying(true);
-    setStatus(direction === 1 ? "Spiller fremover." : "Spiller bevegelsene baklengs.");
+    setStatus(
+      loopPlaybackRef.current && !keepSequence
+        ? "Spiller i kontinuerlig loop."
+        : direction === 1
+          ? "Spiller fremover."
+          : "Spiller bevegelsene baklengs.",
+    );
 
     const tick = (now: number) => {
       const elapsed = ((now - animationStartRef.current) / 1000) * speed;
@@ -1533,6 +1541,17 @@ export default function Home() {
       setPlayhead(clamped);
       const finished = direction === 1 ? clamped >= sceneDuration : clamped <= 0;
       if (!finished) {
+        animationRef.current = requestAnimationFrame(tick);
+        return;
+      }
+
+      if (!sequenceRef.current && loopPlaybackRef.current) {
+        const restartHead = direction === 1 ? 0 : sceneDuration;
+        animationStartHeadRef.current = restartHead;
+        animationStartRef.current = now;
+        setPlayhead(restartHead);
+        setIsPlaying(true);
+        setStatus("Loop spiller kontinuerlig.");
         animationRef.current = requestAnimationFrame(tick);
         return;
       }
@@ -1556,6 +1575,13 @@ export default function Home() {
     };
 
     animationRef.current = requestAnimationFrame(tick);
+  }
+
+  function toggleLoopPlayback() {
+    const next = !loopPlaybackRef.current;
+    loopPlaybackRef.current = next;
+    setLoopPlayback(next);
+    setStatus(next ? "Loop er på. Scenen starter automatisk på nytt." : "Loop er av.");
   }
 
   function toggleForward() {
@@ -2818,6 +2844,15 @@ export default function Home() {
             <div className="playbackDock">
               <button className={`playButton reverse ${isPlaying && playDirectionRef.current === -1 ? "playing" : ""}`} type="button" onClick={playReverse} title="Spill baklengs (R)">◀</button>
               <button className="resetButton" type="button" onClick={resetPlayback} title="Til start">↺</button>
+              <button
+                className={`loopButton ${loopPlayback ? "active" : ""}`}
+                type="button"
+                onClick={toggleLoopPlayback}
+                title="Spill denne scenen kontinuerlig i loop"
+                aria-pressed={loopPlayback}
+              >
+                ↻ <span>Loop</span>
+              </button>
               <button className={`playButton ${isPlaying && playDirectionRef.current === 1 ? "playing" : ""}`} type="button" onClick={toggleForward} title="Play / pause (mellomrom)">{isPlaying && playDirectionRef.current === 1 ? "❚❚" : "▶"}</button>
               <div className="timeReadout"><strong>{playhead.toFixed(1)}</strong><span>/ {sceneDuration.toFixed(1)} s</span></div>
               <input className="scrubber" type="range" min="0" max={sceneDuration} step="0.02" value={playhead} onChange={(event) => { if (animationRef.current !== null) cancelAnimationFrame(animationRef.current); setIsPlaying(false); setPlayhead(Number(event.target.value)); }} aria-label="Tidslinje" />

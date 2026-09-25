@@ -1199,3 +1199,37 @@ button:disabled { opacity: .38; cursor: not-allowed !important; transform: none 
   color: #91b8bd;
   font-size: .62rem;
 }
+
+
+/* Training presentation handoff */
+.presentationTopbarActions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.addToTrainingButton{
+  white-space:nowrap;
+}
+body.embeddedPresentation .patternLauncher,
+body.embeddedPresentation .touchModeLauncher,
+body.embeddedPresentation .touchControlDock{
+  display:none!important;
+}
+body.embeddedPresentation{
+  overflow:hidden;
+}
+body.embeddedPresentation .studioShell.presentationMode{
+  min-height:100vh;
+}
+@media(max-width:760px){
+  .presentationTopbar{
+    align-items:flex-start;
+    gap:10px;
+  }
+  .presentationTopbarActions{
+    width:100%;
+  }
+  .presentationTopbarActions button{
+    flex:1;
+  }
+}

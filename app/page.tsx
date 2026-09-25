@@ -507,6 +507,9 @@ export default function Home() {
   const [openToolPanel, setOpenToolPanel] = useState<string | null>("Bygg");
 
   useEffect(() => {
+    const queryReturnUrl = new URLSearchParams(window.location.search).get("return");
+    if (queryReturnUrl) setPresentationReturnUrl(queryReturnUrl);
+
     const hash = window.location.hash.replace(/^#/, "");
     if (!hash) return;
 
@@ -2558,6 +2561,9 @@ export default function Home() {
             </div>
           </div>
           <div className="headerActions">
+            {presentationReturnUrl && !embeddedPresentation && (
+              <button className="ghostButton coachReturnButton" type="button" onClick={leaveEmbeddedPresentation}>← Tilbake til Coach</button>
+            )}
             <button className="iconButton" type="button" onClick={undo} disabled={historyPast.length === 0} title="Angre (Ctrl/Cmd+Z)">↶</button>
             <button className="iconButton" type="button" onClick={redo} disabled={historyFuture.length === 0} title="Gjør om">↷</button>
             <span className="headerDivider" />

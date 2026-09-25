@@ -474,6 +474,15 @@ export default function Home() {
     () => objects.filter((object) => hasMotion(object) || lines.some((line) => line.actorId === object.id && line.animationKind)),
     [objects, lines],
   );
+
+  const lineAnimatedActorIds = useMemo(
+    () => new Set(
+      lines
+        .filter((line) => line.animationKind && line.actorId)
+        .map((line) => line.actorId as string),
+    ),
+    [lines],
+  );
   const config = pitchConfig[pitch];
   const baseView = pitchViews[pitchView];
   const visibleWidth = baseView.width / zoom;
@@ -2663,14 +2672,14 @@ export default function Home() {
                   </g>
                 )}
 
-                {editGuidesVisible && objects.filter((object) => !object.hidden).map((object) => object.target && (
+                {editGuidesVisible && objects.filter((object) => !object.hidden && !lineAnimatedActorIds.has(object.id)).map((object) => object.target && (
                   <g key={`target-${object.id}`} opacity={object.id === selectedId ? ".9" : ".42"}>
                     <line x1={object.x} y1={object.y} x2={object.target.x} y2={object.target.y} stroke={object.id === selectedId ? "#f7dd72" : "#fff"} strokeWidth="2.6" strokeDasharray="8 9" />
                     <circle cx={object.target.x} cy={object.target.y} r="8" fill="none" stroke="#fff" strokeWidth="2.5" />
                   </g>
                 ))}
 
-                {editGuidesVisible && objects.filter((object) => !object.hidden).map((object) => object.motionPath && object.motionPath.length > 1 && (
+                {editGuidesVisible && objects.filter((object) => !object.hidden && !lineAnimatedActorIds.has(object.id)).map((object) => object.motionPath && object.motionPath.length > 1 && (
                   <g key={`path-${object.id}`} opacity={object.id === selectedId ? ".95" : ".38"}>
                     <polyline
                       points={object.motionPath.map((point) => `${point.x},${point.y}`).join(" ")}

@@ -101,6 +101,15 @@ type Scene = {
   lines: BoardLine[];
 };
 
+type PublishedPresentation = {
+  version: 1;
+  title: string;
+  pitch: PitchType;
+  pitchView: PitchView;
+  scenes: Scene[];
+  sourceUrl: string;
+};
+
 type DrawingLine = {
   type: "arrow" | "run" | "rotation";
   start: Point;
@@ -421,6 +430,22 @@ function motionLabel(object: BoardObject) {
   return (object.team === "blue" ? "Blå" : "Rød") + " " + (object.number || "spiller");
 }
 
+function encodeTransferPayload(value: unknown) {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 1) binary += String.fromCharCode(bytes[index]);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function decodeTransferPayload<T>(value: string): T {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "=".repeat((4 - (normalized.length % 4 || 4)) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return JSON.parse(new TextDecoder().decode(bytes)) as T;
+}
+
 function sanitizeFileName(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9æøåÆØÅ_\- ]/g, "").replace(/\s+/g, "-") || "taktikktavle";
 }
@@ -473,10 +498,57 @@ export default function Home() {
   const [formation, setFormation] = useState<FormationId>("433");
   const [formationTeam, setFormationTeam] = useState<Team>("blue");
   const [presentationMode, setPresentationMode] = useState(false);
+  const [embeddedPresentation, setEmbeddedPresentation] = useState(false);
   const [passFromId, setPassFromId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [pendingSequenceDirection, setPendingSequenceDirection] = useState<1 | -1 | null>(null);
   const [openToolPanel, setOpenToolPanel] = useState<string | null>("Bygg");
+
+  useEffect(() => {
+    const hash = window.location.hash.replace(/^#/, "");
+    if (!hash) return;
+
+    const params = new URLSearchParams(hash);
+    const encodedPresentation = params.get("presentation");
+    if (!encodedPresentation) return;
+
+    try {
+      const imported = decodeTransferPayload<PublishedPresentation>(encodedPresentation);
+      if (
+        imported?.version !== 1 ||
+        !Array.isArray(imported.scenes) ||
+        imported.scenes.length === 0 ||
+        !pitchConfig[imported.pitch] ||
+        !pitchViews[imported.pitchView]
+      ) {
+        throw new Error("Ugyldig presentasjon");
+      }
+
+      const restoredScenes = clone(imported.scenes);
+      restoredScenes.forEach((scene) => recalculateHiddenLineTiming(scene));
+
+      setTitle(imported.title || "Treningsøvelse");
+      setPitch(imported.pitch);
+      setPitchView(imported.pitchView);
+      setScenes(restoredScenes);
+      setSceneIndex(0);
+      setSelectedId(null);
+      setSelectedLineId(null);
+      setTimingLinkDraft(null);
+      setPlayhead(0);
+      setPresentationMode(true);
+      setEmbeddedPresentation(true);
+      setLineTypeVisibility({ arrow: true, run: true, rotation: true });
+      setStatus("Presentasjon lastet.");
+      document.body.classList.add("embeddedPresentation");
+    } catch (error) {
+      console.error("Kunne ikke åpne treningspresentasjonen:", error);
+      setStatus("Kunne ikke åpne treningspresentasjonen.");
+    }
+
+    return () => document.body.classList.remove("embeddedPresentation");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const currentScene = scenes[sceneIndex] ?? scenes[0];
   const objects = currentScene?.objects ?? [];
@@ -2241,6 +2313,33 @@ export default function Home() {
     setStatus(`${preset.label} lagt inn for ${formationTeam === "blue" ? "blått" : "rødt"} lag.`);
   }
 
+  function addPresentationToTraining() {
+    try {
+      const sourceUrl = window.location.origin + window.location.pathname;
+      const payload: PublishedPresentation = {
+        version: 1,
+        title: title.trim() || "Treningsøvelse",
+        pitch,
+        pitchView,
+        scenes: clone(scenes),
+        sourceUrl,
+      };
+      const transfer = encodeTransferPayload(payload);
+      const plannerUrl = "https://coachtool1.vercel.app/ukens-ovelser.html";
+      const target = `${plannerUrl}#tacticImport=${transfer}`;
+      const opened = window.open(target, "_blank", "noopener,noreferrer");
+
+      if (!opened) {
+        window.location.href = target;
+        return;
+      }
+      setStatus("Presentasjonen er sendt til Treningsplanleggeren.");
+    } catch (error) {
+      console.error("Kunne ikke sende presentasjonen til trening:", error);
+      setStatus("Kunne ikke sende presentasjonen til Treningsplanleggeren.");
+    }
+  }
+
   function saveBoard() {
     try {
       localStorage.setItem("taktikktavle-v2", JSON.stringify({ version: 2, title, pitch, pitchView, scenes }));
@@ -2716,7 +2815,12 @@ export default function Home() {
             {presentationMode && (
               <div className="presentationTopbar">
                 <div><strong>{title}</strong><span>{currentScene.name}</span></div>
-                <button className="ghostButton" type="button" onClick={() => setPresentationMode(false)}>✕ Avslutt presentasjon</button>
+                {!embeddedPresentation && (
+                  <div className="presentationTopbarActions">
+                    <button className="primaryButton addToTrainingButton" type="button" onClick={addPresentationToTraining}>＋ Legg til i trening</button>
+                    <button className="ghostButton" type="button" onClick={() => setPresentationMode(false)}>✕ Avslutt presentasjon</button>
+                  </div>
+                )}
               </div>
             )}
 

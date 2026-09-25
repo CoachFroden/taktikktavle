@@ -88,6 +88,10 @@ type BoardLine = {
   lineShape?: "straight" | "free";
   controlPoints?: Point[];
   manualColor?: boolean;
+  timingGate?: {
+    progress: number;
+    passLineId: string;
+  };
 };
 
 type Scene = {
@@ -128,6 +132,12 @@ type LinePointDrag = {
   snapshot: Scene[];
   snapTargetLineId?: string;
   snapTargetObjectId?: string;
+};
+
+type TimingLinkDraft = {
+  runLineId: string;
+  stage: "place" | "link";
+  progress?: number;
 };
 
 type FormationId = "433" | "442" | "343" | "332" | "231" | "121";
@@ -297,6 +307,44 @@ function linePoints(line: BoardLine): Point[] {
   ];
 }
 
+function closestProgressOnPath(path: Point[], point: Point) {
+  if (path.length < 2) return 0.5;
+
+  const lengths: number[] = [];
+  let totalLength = 0;
+  for (let i = 1; i < path.length; i += 1) {
+    const length = pointDistance(path[i - 1], path[i]);
+    lengths.push(length);
+    totalLength += length;
+  }
+  if (totalLength <= 0.001) return 0.5;
+
+  let bestDistance = Number.POSITIVE_INFINITY;
+  let bestTravel = totalLength / 2;
+  let travelled = 0;
+
+  for (let i = 0; i < lengths.length; i += 1) {
+    const start = path[i];
+    const end = path[i + 1];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const lengthSquared = dx * dx + dy * dy;
+    const local = lengthSquared <= 0.001
+      ? 0
+      : clamp(((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared, 0, 1);
+    const projected = { x: start.x + dx * local, y: start.y + dy * local };
+    const distance = pointDistance(point, projected);
+
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestTravel = travelled + lengths[i] * local;
+    }
+    travelled += lengths[i];
+  }
+
+  return clamp(bestTravel / totalLength, 0.02, 0.98);
+}
+
 function lineIsFree(line: BoardLine) {
   return line.lineShape === "free" || Boolean(line.controlPoints?.length);
 }
@@ -399,6 +447,7 @@ export default function Home() {
   const [sceneIndex, setSceneIndex] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  const [timingLinkDraft, setTimingLinkDraft] = useState<TimingLinkDraft | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [drawing, setDrawing] = useState<DrawingLine | null>(null);
   const [freehandPreview, setFreehandPreview] = useState<Point[]>([]);
@@ -439,6 +488,12 @@ export default function Home() {
   const selectedLine = useMemo(
     () => lines.find((line) => line.id === selectedLineId) ?? null,
     [lines, selectedLineId],
+  );
+  const selectedTimingPass = useMemo(
+    () => selectedLine?.timingGate
+      ? lines.find((line) => line.id === selectedLine.timingGate?.passLineId) ?? null
+      : null,
+    [lines, selectedLine],
   );
   const lastAnimatedLine = useMemo(
     () => [...lines].reverse().find((line) => line.sequenceId && line.animationKind && line.actorId) ?? null,
@@ -556,7 +611,7 @@ export default function Home() {
     setStatus("Gjorde om endringen igjen.");
   }
 
-  function boardPoint(event: ReactPointerEvent<SVGSVGElement | SVGGElement>): Point {
+  function boardPoint(event: ReactPointerEvent<SVGElement>): Point {
     const svg = svgRef.current;
     if (!svg) return { x: 500, y: 325 };
     const matrix = svg.getScreenCTM();
@@ -842,6 +897,22 @@ export default function Home() {
 
             for (const movementId of movementSequenceIds) {
               const movementLines = sortedSequence(movementId);
+              for (const movementLine of movementLines) {
+                if (
+                  movementLine.timingGate?.passLineId === line.id &&
+                  movementLine.timingStart !== undefined &&
+                  movementLine.timingDuration !== undefined
+                ) {
+                  const gateMoment =
+                    movementLine.timingStart +
+                    movementLine.timingDuration * clamp(movementLine.timingGate.progress, 0.02, 0.98);
+                  start = Math.max(start, gateMoment);
+                }
+              }
+            }
+
+            for (const movementId of movementSequenceIds) {
+              const movementLines = sortedSequence(movementId);
               const last = movementLines[movementLines.length - 1];
               if (!last || last.timingStart === undefined || last.timingDuration === undefined) continue;
               if (!line.endSnapId || !last.endSnapId || line.endSnapId !== last.endSnapId) continue;
@@ -883,24 +954,65 @@ export default function Home() {
           }
         }
 
-        const matchingPasses = passLines
-          .filter((passLine) =>
-            passLine.timingStart !== undefined &&
-            pointDistance(passLine.start, first.start) <= 30
-          )
-          .sort((a, b) => (a.timingStart ?? 0) - (b.timingStart ?? 0));
+        const durations = movementLines.map((movementLine) => {
+          const gate = movementLine.timingGate;
+          if (!gate) return naturalDuration(movementLine);
 
-        const trigger = matchingPasses.find((passLine) =>
-          (passLine.timingStart ?? 0) >= earliestStart - 0.03
-        ) ?? (earliestStart <= 0.03 ? matchingPasses[0] : undefined);
+          const linkedPass = passLines.find((passLine) => passLine.id === gate.passLineId);
+          const progress = clamp(gate.progress, 0.02, 0.98);
+          if (
+            linkedPass?.timingDuration !== undefined &&
+            movementLine.endSnapId &&
+            linkedPass.endSnapId &&
+            movementLine.endSnapId === linkedPass.endSnapId
+          ) {
+            // One continuous run can satisfy both constraints:
+            // cross the gate when the pass leaves and reach the endpoint with the pass.
+            return Math.max(0.15, linkedPass.timingDuration / Math.max(0.02, 1 - progress));
+          }
+          return naturalDuration(movementLine);
+        });
 
-        let cursor = Math.max(earliestStart, trigger?.timingStart ?? earliestStart);
-        for (const line of movementLines) {
-          const duration = naturalDuration(line);
-          line.timingStart = cursor;
-          line.timingDuration = duration;
-          cursor += duration;
+        const gateIndex = movementLines.findIndex((movementLine) => {
+          const gate = movementLine.timingGate;
+          if (!gate) return false;
+          const linkedPass = passLines.find((passLine) => passLine.id === gate.passLineId);
+          return linkedPass?.timingStart !== undefined;
+        });
+
+        let cursor = earliestStart;
+
+        if (gateIndex >= 0) {
+          const gateLine = movementLines[gateIndex];
+          const gate = gateLine.timingGate as NonNullable<BoardLine["timingGate"]>;
+          const linkedPass = passLines.find((passLine) => passLine.id === gate.passLineId);
+          const passStart = linkedPass?.timingStart ?? 0;
+          const beforeGate = durations
+            .slice(0, gateIndex)
+            .reduce((sum, duration) => sum + duration, 0);
+          const toGate = beforeGate + durations[gateIndex] * clamp(gate.progress, 0.02, 0.98);
+          cursor = Math.max(earliestStart, passStart - toGate);
+        } else {
+          const matchingPasses = passLines
+            .filter((passLine) =>
+              passLine.timingStart !== undefined &&
+              pointDistance(passLine.start, first.start) <= 30
+            )
+            .sort((a, b) => (a.timingStart ?? 0) - (b.timingStart ?? 0));
+
+          const trigger = matchingPasses.find((passLine) =>
+            (passLine.timingStart ?? 0) >= earliestStart - 0.03
+          ) ?? (earliestStart <= 0.03 ? matchingPasses[0] : undefined);
+
+          cursor = Math.max(earliestStart, trigger?.timingStart ?? earliestStart);
         }
+
+        movementLines.forEach((movementLine, index) => {
+          const duration = durations[index];
+          movementLine.timingStart = cursor;
+          movementLine.timingDuration = duration;
+          cursor += duration;
+        });
       }
     };
 
@@ -935,7 +1047,11 @@ export default function Home() {
           }
         }
 
-        if (targetLine && passArrival > targetArrival + 0.01) {
+        if (
+          targetLine &&
+          targetLine.timingGate?.passLineId !== passLine.id &&
+          passArrival > targetArrival + 0.01
+        ) {
           targetLine.timingDuration = Math.max(
             0.15,
             (targetLine.timingDuration ?? 0) + (passArrival - targetArrival),
@@ -985,7 +1101,10 @@ export default function Home() {
     cancelFreehand();
     setTool(nextTool);
     setDrawing(null);
-    if (nextTool !== "select") setSelectedLineId(null);
+    if (nextTool !== "select") {
+      setSelectedLineId(null);
+      setTimingLinkDraft(null);
+    }
     const activeAnimationTool = animationToolForMode(lineAnimationMode);
     if (lineAnimationMode !== "off" && nextTool !== activeAnimationTool) {
       setLineAnimationMode("off");
@@ -1880,11 +1999,46 @@ export default function Home() {
     setStatus(pointIndex === linePoints(line).length - 1 ? "Flytter linjens endepunkt." : "Flytter linjepunkt.");
   }
 
+  function beginTimingGate(line: BoardLine) {
+    if (line.animationKind !== "run" && line.animationKind !== "rotation") {
+      setStatus("Timingpunkt brukes på et animert løp eller en animert rullering.");
+      return;
+    }
+    setTool("select");
+    setSelectedLineId(line.id);
+    setSelectedId(null);
+    setTimingLinkDraft({ runLineId: line.id, stage: "place" });
+    setStatus("Klikk på løpslinjen der spilleren skal passere akkurat idet pasningen slås.");
+  }
+
+  function cancelTimingGate() {
+    setTimingLinkDraft(null);
+    setStatus("Timingkoblingen ble avbrutt.");
+  }
+
+  function removeTimingGate() {
+    if (!selectedLineId) return;
+    mutateCurrentScene((scene) => {
+      const line = scene.lines.find((item) => item.id === selectedLineId);
+      if (!line) return;
+      line.timingGate = undefined;
+      recalculateHiddenLineTiming(scene);
+    });
+    setTimingLinkDraft(null);
+    setPlayhead(0);
+    setStatus("Timingpunktet er fjernet.");
+  }
+
   function deleteSelectedLine() {
     if (!selectedLineId) return;
     const lineToDelete = lines.find((line) => line.id === selectedLineId);
     mutateCurrentScene((scene) => {
       scene.lines = scene.lines.filter((line) => line.id !== selectedLineId);
+      scene.lines = scene.lines.map((line) =>
+        line.timingGate?.passLineId === selectedLineId
+          ? { ...line, timingGate: undefined }
+          : line
+      );
 
       if (lineToDelete?.sequenceId && lineToDelete.actorId && lineToDelete.animationKind) {
         const remaining = scene.lines.filter((line) => line.sequenceId === lineToDelete.sequenceId);
@@ -1912,6 +2066,45 @@ export default function Home() {
   function handleLinePointerDown(event: ReactPointerEvent<SVGElement>, line: BoardLine) {
     if (tool !== "select") return;
     event.stopPropagation();
+
+    if (timingLinkDraft) {
+      if (timingLinkDraft.stage === "place") {
+        if (line.id !== timingLinkDraft.runLineId) {
+          setStatus("Klikk på den valgte løpslinjen for å plassere timingpunktet.");
+          return;
+        }
+        const progress = closestProgressOnPath(linePoints(line), boardPoint(event));
+        setTimingLinkDraft({ ...timingLinkDraft, stage: "link", progress });
+        setSelectedLineId(line.id);
+        setSelectedId(null);
+        setStatus("Timingpunkt satt. Klikk nå på den animerte pasningen som skal slås når spilleren passerer punktet.");
+        return;
+      }
+
+      if (line.animationKind !== "pass") {
+        setStatus("Velg en animert pasningslinje. Det er starten på denne pasningen som skal styre timingen.");
+        return;
+      }
+
+      const runLineId = timingLinkDraft.runLineId;
+      const progress = timingLinkDraft.progress ?? 0.5;
+      mutateCurrentScene((scene) => {
+        const runLine = scene.lines.find((item) => item.id === runLineId);
+        if (!runLine) return;
+        runLine.timingGate = {
+          progress: clamp(progress, 0.02, 0.98),
+          passLineId: line.id,
+        };
+        recalculateHiddenLineTiming(scene);
+      });
+      setTimingLinkDraft(null);
+      setSelectedLineId(runLineId);
+      setSelectedId(null);
+      setPlayhead(0);
+      setStatus("Timingpunkt koblet. Spilleren passerer punktet idet den valgte pasningen slås, uten å stoppe.");
+      return;
+    }
+
     setSelectedLineId(line.id);
     setSelectedId(null);
     setContextMenu(null);
@@ -2015,6 +2208,7 @@ export default function Home() {
     setSceneIndex(index);
     setSelectedId(null);
     setSelectedLineId(null);
+    setTimingLinkDraft(null);
     setPlayhead(0);
     setContextMenu(null);
   }
@@ -2554,6 +2748,14 @@ export default function Home() {
                   const pointsString = linePathPointsString(line);
                   const midpoint = pointAlongPath(points, 0.5);
                   const selected = selectedLineId === line.id;
+                  const draftTimingProgress =
+                    timingLinkDraft?.runLineId === line.id && timingLinkDraft.progress !== undefined
+                      ? timingLinkDraft.progress
+                      : undefined;
+                  const visibleTimingProgress = draftTimingProgress ?? line.timingGate?.progress;
+                  const timingPoint = visibleTimingProgress !== undefined
+                    ? pointAlongPath(points, visibleTimingProgress)
+                    : null;
                   const sequenceLineCount = line.sequenceId
                     ? lines.filter((item) =>
                         item.sequenceId === line.sequenceId &&
@@ -2572,6 +2774,14 @@ export default function Home() {
                         pointerEvents={tool === "select" ? "stroke" : "none"}
                         onPointerDown={(event) => handleLinePointerDown(event, line)}
                       />
+                      {timingLinkDraft?.stage === "link" && line.animationKind === "pass" && (
+                        <polyline
+                          points={pointsString}
+                          fill="none"
+                          stroke="#70f0a6" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" opacity=".20"
+                          pointerEvents="none"
+                        />
+                      )}
                       {selected && (
                         <polyline
                           points={pointsString}
@@ -2606,6 +2816,17 @@ export default function Home() {
                           <text y="3.2" textAnchor="middle" fill={color} fontSize="8" fontWeight="950">R</text>
                         </g>
                       ) : null}
+
+                      {timingPoint && editGuidesVisible && (
+                        <g
+                          className={`timingGateMarker ${draftTimingProgress !== undefined ? "draft" : ""}`}
+                          transform={`translate(${timingPoint.x} ${timingPoint.y})`}
+                          pointerEvents="none"
+                        >
+                          <circle r="10" fill="#071511" stroke="#72e5ff" strokeWidth="2.2" />
+                          <text y="3.6" textAnchor="middle" fill="#bff5ff" fontSize="8.5" fontWeight="950">T</text>
+                        </g>
+                      )}
 
                       {selected && tool === "select" && points.map((point, pointIndex) => {
                         const isEnd = pointIndex === points.length - 1;
@@ -3128,6 +3349,50 @@ export default function Home() {
                     Velg «Fri» eller legg til punkter. Dra de små håndtakene på banen for å flytte start, slutt og styrepunkter.
                   </p>
                 </div>
+
+                {(selectedLine.animationKind === "run" || selectedLine.animationKind === "rotation") && (
+                  <div className="inspectorGroup timingGateInspector">
+                    <div className="inspectorGroupTitle">Timing i bevegelsen</div>
+                    {selectedLine.timingGate ? (
+                      <>
+                        <div className="timingGateStatus">
+                          <span className="timingGateDot">T</span>
+                          <div>
+                            <strong>Passering synkronisert</strong>
+                            <small>
+                              {selectedTimingPass
+                                ? `Med pasning${selectedTimingPass.sequenceOrder ? ` steg ${selectedTimingPass.sequenceOrder}` : ""}`
+                                : "Koblet pasning mangler"}
+                            </small>
+                          </div>
+                        </div>
+                        <p className="inspectorHelp">
+                          Spilleren løper kontinuerlig og passerer T-punktet akkurat når den koblede pasningen slås.
+                        </p>
+                        <div className="linePointActions">
+                          <button className="secondaryButton full" type="button" onClick={() => beginTimingGate(selectedLine)}>↻ Flytt / koble på nytt</button>
+                          <button className="secondaryButton full" type="button" onClick={removeTimingGate}>− Fjern timing</button>
+                        </div>
+                      </>
+                    ) : timingLinkDraft?.runLineId === selectedLine.id ? (
+                      <>
+                        <p className="inspectorHelp">
+                          {timingLinkDraft.stage === "place"
+                            ? "Klikk på denne løpslinjen der spilleren skal passere idet pasningen slås."
+                            : "T-punktet er satt. Klikk nå på pasningslinjen som skal styre tidspunktet."}
+                        </p>
+                        <button className="secondaryButton full" type="button" onClick={cancelTimingGate}>Avbryt timing</button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="inspectorHelp">
+                          Synkroniser et punkt på løpet med starten på en pasning. Spilleren starter automatisk tidsnok og stopper ikke underveis.
+                        </p>
+                        <button className="secondaryButton full" type="button" onClick={() => beginTimingGate(selectedLine)}>＋ Timingpunkt</button>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 <div className="inspectorGroup">
                   <div className="inspectorGroupTitle">Valgt linje</div>

@@ -407,7 +407,6 @@ export default function Home() {
   const [playhead, setPlayhead] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [loopPlayback, setLoopPlayback] = useState(false);
-  const [showGuideLines, setShowGuideLines] = useState(true);
   const [lineTypeVisibility, setLineTypeVisibility] = useState<Record<BoardLine["type"], boolean>>({
     arrow: true,
     run: true,
@@ -488,13 +487,13 @@ export default function Home() {
   const visibleY = clamp(viewCenter.y - visibleHeight / 2, 0, 650 - visibleHeight);
   const currentViewBox = `${visibleX} ${visibleY} ${visibleWidth} ${visibleHeight}`;
   const playbackActive = isPlaying || pendingSequenceDirection !== null;
-  const editGuidesVisible = showGuideLines && !playbackActive;
+  const editGuidesVisible = !playbackActive;
 
   function lineVisibleNow(line: BoardLine) {
     if (line.hidden) return false;
     return playbackActive
       ? playbackLineTypeVisibility[line.type]
-      : showGuideLines && lineTypeVisibility[line.type];
+      : lineTypeVisibility[line.type];
   }
 
   function snapshotForHistory(snapshot: Scene[]) {
@@ -2401,14 +2400,14 @@ export default function Home() {
                   <span className="dropdownIcon">◉</span>
                   <span className="dropdownTitle">
                     <strong>Synlighet</strong>
-                    <small>{hiddenItemCount > 0 ? `${hiddenItemCount} skjult individuelt` : "Elementer og linjetyper"}</small>
+                    <small>{hiddenItemCount > 0 ? `${hiddenItemCount} skjult individuelt` : "Hva som vises på tavlen"}</small>
                   </span>
                   <span className="dropdownChevron">{openToolPanel === "Synlighet" ? "⌃" : "⌄"}</span>
                 </button>
                 {openToolPanel === "Synlighet" && (
                   <div className="toolDropdownBody visibilityPanel">
                     <div className="visibilityGroup">
-                      <span className="visibilityHeading">Linjetyper</span>
+                      <span className="visibilityHeading">På tavlen</span>
                       <button type="button" className={`visibilityToggle ${lineTypeVisibility.arrow ? "on" : "off"}`} onClick={() => toggleLineTypeVisibility("arrow")}>
                         <span>➜ Pasning</span><b>{lineTypeVisibility.arrow ? "Vises" : "Skjult"}</b>
                       </button>
@@ -2875,21 +2874,7 @@ export default function Home() {
               <div className="timeReadout"><strong>{playhead.toFixed(1)}</strong><span>/ {sceneDuration.toFixed(1)} s</span></div>
               <input className="scrubber" type="range" min="0" max={sceneDuration} step="0.02" value={playhead} onChange={(event) => { if (animationRef.current !== null) cancelAnimationFrame(animationRef.current); setIsPlaying(false); setPlayhead(Number(event.target.value)); }} aria-label="Tidslinje" />
               <div className="lineVisibilityControls" aria-label="Linjevisning">
-                <button
-                  className={`miniButton text ${showGuideLines ? "active" : ""}`}
-                  type="button"
-                  onClick={() => {
-                    setShowGuideLines((current) => {
-                      const next = !current;
-                      setStatus(next ? "Hjelpelinjene vises i redigering." : "Hjelpelinjene er skjult i redigering.");
-                      return next;
-                    });
-                  }}
-                  title="Vis eller skjul hjelpelinjer mens du redigerer"
-                >
-                  {showGuideLines ? "◉ Redigering" : "○ Redigering"}
-                </button>
-                <span className="playbackFilterLabel">Play:</span>
+                <span className="playbackFilterLabel">Vis under Play:</span>
                 {([
                   ["arrow", "Pasning"],
                   ["run", "Løp"],

@@ -2514,7 +2514,8 @@ export default function Home() {
         playReverse();
       }
       if (event.key === "Escape") {
-        setPresentationMode(false);
+        const embedded = new URLSearchParams(window.location.hash.replace(/^#/, "")).has("presentation");
+        if (!embedded) setPresentationMode(false);
         setContextMenu(null);
         setPassFromId(null);
       }

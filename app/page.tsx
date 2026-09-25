@@ -412,11 +412,6 @@ export default function Home() {
     run: true,
     rotation: true,
   });
-  const [playbackLineTypeVisibility, setPlaybackLineTypeVisibility] = useState<Record<BoardLine["type"], boolean>>({
-    arrow: false,
-    run: false,
-    rotation: false,
-  });
   const [speed, setSpeed] = useState(1);
   const [lineAnimationMode, setLineAnimationMode] = useState<LineAnimationMode>("off");
   const [lineAnimationSequenceId, setLineAnimationSequenceId] = useState(() => makeId());
@@ -491,9 +486,7 @@ export default function Home() {
 
   function lineVisibleNow(line: BoardLine) {
     if (line.hidden) return false;
-    return playbackActive
-      ? playbackLineTypeVisibility[line.type]
-      : lineTypeVisibility[line.type];
+    return lineTypeVisibility[line.type];
   }
 
   function snapshotForHistory(snapshot: Scene[]) {
@@ -1715,20 +1708,14 @@ export default function Home() {
     const nextVisible = !lineTypeVisibility[type];
     setLineTypeVisibility((current) => ({ ...current, [type]: nextVisible }));
     if (!nextVisible && selectedLine?.type === type) setSelectedLineId(null);
-    const label = type === "arrow" ? "Pasningslinjer" : type === "run" ? "Løpslinjer" : "Rulleringslinjer";
-    setStatus(nextVisible ? `${label} vises.` : `${label} er skjult.`);
-  }
-
-  function togglePlaybackLineType(type: BoardLine["type"]) {
-    const nextVisible = !playbackLineTypeVisibility[type];
-    setPlaybackLineTypeVisibility((current) => ({ ...current, [type]: nextVisible }));
     const label = type === "arrow" ? "Pasning" : type === "run" ? "Løp" : "Rullering";
-    setStatus(nextVisible ? `${label} vises under avspilling.` : `${label} skjules under avspilling.`);
+    setStatus(nextVisible ? `${label} vises på tavlen.` : `${label} skjules på tavlen.`);
   }
 
-  function clearPlaybackLineTypes() {
-    setPlaybackLineTypeVisibility({ arrow: false, run: false, rotation: false });
-    setStatus("Alle linjetyper skjules under avspilling.");
+  function hideAllLineTypes() {
+    setLineTypeVisibility({ arrow: false, run: false, rotation: false });
+    setSelectedLineId(null);
+    setStatus("Alle pasnings-, løps- og rulleringslinjer er skjult.");
   }
 
   function clearMovement() {
@@ -2400,25 +2387,12 @@ export default function Home() {
                   <span className="dropdownIcon">◉</span>
                   <span className="dropdownTitle">
                     <strong>Synlighet</strong>
-                    <small>{hiddenItemCount > 0 ? `${hiddenItemCount} skjult individuelt` : "Hva som vises på tavlen"}</small>
+                    <small>{hiddenItemCount > 0 ? `${hiddenItemCount} skjult individuelt` : "Skjul og vis enkeltting"}</small>
                   </span>
                   <span className="dropdownChevron">{openToolPanel === "Synlighet" ? "⌃" : "⌄"}</span>
                 </button>
                 {openToolPanel === "Synlighet" && (
                   <div className="toolDropdownBody visibilityPanel">
-                    <div className="visibilityGroup">
-                      <span className="visibilityHeading">På tavlen</span>
-                      <button type="button" className={`visibilityToggle ${lineTypeVisibility.arrow ? "on" : "off"}`} onClick={() => toggleLineTypeVisibility("arrow")}>
-                        <span>➜ Pasning</span><b>{lineTypeVisibility.arrow ? "Vises" : "Skjult"}</b>
-                      </button>
-                      <button type="button" className={`visibilityToggle ${lineTypeVisibility.run ? "on" : "off"}`} onClick={() => toggleLineTypeVisibility("run")}>
-                        <span>⋯ Løp</span><b>{lineTypeVisibility.run ? "Vises" : "Skjult"}</b>
-                      </button>
-                      <button type="button" className={`visibilityToggle ${lineTypeVisibility.rotation ? "on" : "off"}`} onClick={() => toggleLineTypeVisibility("rotation")}>
-                        <span>↻ Rullering</span><b>{lineTypeVisibility.rotation ? "Vises" : "Skjult"}</b>
-                      </button>
-                    </div>
-
                     <div className="visibilityGroup">
                       <div className="visibilityHeadingRow">
                         <span className="visibilityHeading">Skjult individuelt</span>
@@ -2874,7 +2848,7 @@ export default function Home() {
               <div className="timeReadout"><strong>{playhead.toFixed(1)}</strong><span>/ {sceneDuration.toFixed(1)} s</span></div>
               <input className="scrubber" type="range" min="0" max={sceneDuration} step="0.02" value={playhead} onChange={(event) => { if (animationRef.current !== null) cancelAnimationFrame(animationRef.current); setIsPlaying(false); setPlayhead(Number(event.target.value)); }} aria-label="Tidslinje" />
               <div className="lineVisibilityControls" aria-label="Linjevisning">
-                <span className="playbackFilterLabel">Vis under Play:</span>
+                <span className="playbackFilterLabel">Linjer:</span>
                 {([
                   ["arrow", "Pasning"],
                   ["run", "Løp"],
@@ -2882,16 +2856,17 @@ export default function Home() {
                 ] as Array<[BoardLine["type"], string]>).map(([type, label]) => (
                   <button
                     key={type}
-                    className={`miniButton text playbackTypeToggle ${playbackLineTypeVisibility[type] ? "active" : ""}`}
+                    className={`miniButton text playbackTypeToggle ${lineTypeVisibility[type] ? "active" : ""}`}
                     style={{ "--type-color": defaultLineColor(type) } as CSSProperties}
                     type="button"
-                    onClick={() => togglePlaybackLineType(type)}
-                    title={`Vis/skjul ${label.toLowerCase()} under avspilling`}
+                    onClick={() => toggleLineTypeVisibility(type)}
+                    title={`Vis/skjul ${label.toLowerCase()} på tavlen`}
+                    aria-pressed={lineTypeVisibility[type]}
                   >
                     <span className="typeColorDot" />{label}
                   </button>
                 ))}
-                <button className="miniButton text" type="button" onClick={clearPlaybackLineTypes} title="Skjul alle linjer under avspilling">Ingen</button>
+                <button className="miniButton text" type="button" onClick={hideAllLineTypes} title="Skjul alle pasnings-, løps- og rulleringslinjer">Ingen</button>
               </div>
               <select className="darkSelect speedSelect" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} aria-label="Avspillingsfart">
                 <option value={0.5}>0,5×</option><option value={1}>1×</option><option value={1.5}>1,5×</option><option value={2}>2×</option>

@@ -1133,3 +1133,69 @@ button:disabled { opacity: .38; cursor: not-allowed !important; transform: none 
     padding: 0;
   }
 }
+
+
+/* pass-linked timing gates */
+.timingGateMarker {
+  filter: drop-shadow(0 2px 5px rgba(0,0,0,.45));
+}
+
+.timingGateMarker circle,
+.timingGateMarker text {
+  vector-effect: non-scaling-stroke;
+}
+
+.timingGateMarker.draft circle {
+  stroke-dasharray: 3 2;
+  animation: timingGatePulse 1.15s ease-in-out infinite;
+}
+
+@keyframes timingGatePulse {
+  0%, 100% { opacity: .72; }
+  50% { opacity: 1; }
+}
+
+.timingGateInspector {
+  gap: 8px;
+}
+
+.timingGateStatus {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 9px;
+  border: 1px solid rgba(114,229,255,.20);
+  border-radius: 10px;
+  background: rgba(114,229,255,.055);
+}
+
+.timingGateDot {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1.5px solid #72e5ff;
+  background: #071511;
+  color: #bff5ff;
+  font-size: .70rem;
+  font-weight: 950;
+}
+
+.timingGateStatus > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.timingGateStatus strong {
+  color: #edfafa;
+  font-size: .72rem;
+}
+
+.timingGateStatus small {
+  color: #91b8bd;
+  font-size: .62rem;
+}

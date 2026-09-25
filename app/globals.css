@@ -1325,3 +1325,32 @@ body.embeddedPresentation .pitchSvg{
     text-align:center;
   }
 }
+
+
+/* 2026-09-25 fit embedded presentation controls inside training card */
+body.embeddedPresentation .presentationMode .pitchSvg{
+  max-height:calc(100vh - 190px);
+}
+body.embeddedPresentation .presentationMode .pitchCard{
+  padding-bottom:6px;
+}
+body.embeddedPresentation .presentationMode .playbackDock{
+  row-gap:5px;
+  padding-top:7px;
+}
+body.embeddedPresentation .presentationMode .lineVisibilityControls{
+  min-height:32px;
+}
+body.embeddedPresentation .presentationMode .lineVisibilityControls .miniButton{
+  min-height:27px;
+  padding:4px 7px;
+  font-size:.64rem;
+}
+body.embeddedPresentation .presentationMode .speedSelect{
+  min-height:31px;
+}
+@media(max-width:700px){
+  body.embeddedPresentation .presentationMode .pitchSvg{
+    max-height:calc(100vh - 205px);
+  }
+}

@@ -1354,3 +1354,104 @@ body.embeddedPresentation .presentationMode .speedSelect{
     max-height:calc(100vh - 205px);
   }
 }
+
+
+/* 2026-09-25 single-row presentation controls */
+.presentationMode .playbackDock{
+  width:100%;
+  margin:0 auto;
+  display:flex;
+  flex-wrap:nowrap;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+  padding:7px 3px 2px;
+  overflow-x:auto;
+  scrollbar-width:none;
+}
+.presentationMode .playbackDock::-webkit-scrollbar{display:none}
+.presentationMode .playButton{
+  width:34px;
+  height:34px;
+  min-width:34px;
+  border-radius:10px;
+  font-size:.78rem;
+}
+.presentationMode .resetButton{
+  width:31px;
+  height:31px;
+  min-width:31px;
+  border-radius:9px;
+}
+.presentationMode .loopButton{
+  width:34px;
+  min-width:34px;
+  min-height:31px;
+  padding:0;
+  border-radius:9px;
+}
+.presentationMode .loopButton span{
+  display:none;
+}
+.presentationMode .timeReadout{
+  min-width:61px;
+  flex:0 0 61px;
+  justify-content:center;
+}
+.presentationMode .timeReadout strong{font-size:.82rem}
+.presentationMode .timeReadout span{font-size:.58rem}
+.presentationMode .scrubber{
+  flex:1 1 220px;
+  min-width:110px;
+  max-width:none;
+}
+.presentationMode .lineVisibilityControls{
+  flex:0 0 auto;
+  width:auto;
+  max-width:none;
+  min-height:31px;
+  padding:2px;
+  gap:2px;
+  flex-wrap:nowrap!important;
+}
+.presentationMode .playbackFilterLabel{
+  display:none;
+}
+.presentationMode .lineVisibilityControls .miniButton{
+  min-height:27px;
+  min-width:auto;
+  padding:3px 6px;
+  border-radius:7px;
+  font-size:.58rem;
+}
+.presentationMode .typeColorDot{
+  width:7px;
+  height:7px;
+}
+.presentationMode .speedSelect{
+  flex:0 0 55px;
+  width:55px;
+  min-height:31px;
+  padding:4px;
+  font-size:.62rem;
+}
+body.embeddedPresentation .presentationMode .pitchSvg{
+  max-height:calc(100vh - 145px);
+}
+.returnToTrainingButton{
+  white-space:nowrap;
+}
+
+@media(max-width:620px){
+  .presentationMode .playbackDock{
+    justify-content:flex-start;
+    padding-inline:2px;
+  }
+  .presentationMode .scrubber{
+    flex-basis:130px;
+    min-width:90px;
+  }
+  body.embeddedPresentation .presentationMode .pitchSvg{
+    max-height:calc(100vh - 150px);
+  }
+}

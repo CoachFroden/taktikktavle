@@ -2572,6 +2572,14 @@ export default function Home() {
                   const pointsString = linePathPointsString(line);
                   const midpoint = pointAlongPath(points, 0.5);
                   const selected = selectedLineId === line.id;
+                  const sequenceLineCount = line.sequenceId
+                    ? lines.filter((item) =>
+                        item.sequenceId === line.sequenceId &&
+                        item.animationKind === line.animationKind &&
+                        item.actorId === line.actorId
+                      ).length
+                    : 0;
+                  const singleRotation = line.type === "rotation" && sequenceLineCount <= 1;
                   return (
                     <g key={line.id}>
                       <polyline
@@ -2600,7 +2608,12 @@ export default function Home() {
                         opacity=".92"
                         pointerEvents="none"
                       />
-                      {line.sequenceOrder ? (
+                      {singleRotation ? (
+                        <g className="rotationBadge" transform={`translate(${midpoint.x} ${midpoint.y})`}>
+                          <circle r="8.5" fill="#081511" stroke={color} strokeWidth="1.8" />
+                          <text y="3.2" textAnchor="middle" fill={color} fontSize="8" fontWeight="950">R</text>
+                        </g>
+                      ) : line.sequenceOrder ? (
                         <g className="animationStepBadge" transform={`translate(${midpoint.x} ${midpoint.y})`}>
                           <circle r="9" fill="#081511" stroke={color} strokeWidth="1.8" />
                           <text y="3.4" textAnchor="middle" fill={color} fontSize="8.5" fontWeight="950">{line.sequenceOrder}</text>
@@ -2658,7 +2671,12 @@ export default function Home() {
                         <text y="-23" textAnchor="middle" fill="#dfffea" fontSize="10" fontWeight="900">SYNK</text>
                       </g>
                     )}
-                    {drawing.sequenceOrder ? (
+                    {drawing.type === "rotation" && drawing.sequenceOrder === 1 ? (
+                      <g transform={`translate(${(drawing.start.x + drawing.current.x) / 2} ${(drawing.start.y + drawing.current.y) / 2})`}>
+                        <circle r="8.5" fill="#081511" stroke={defaultLineColor(drawing.type)} strokeWidth="1.8" />
+                        <text y="3.2" textAnchor="middle" fill={defaultLineColor(drawing.type)} fontSize="8" fontWeight="950">R</text>
+                      </g>
+                    ) : drawing.sequenceOrder ? (
                       <g transform={`translate(${(drawing.start.x + drawing.current.x) / 2} ${(drawing.start.y + drawing.current.y) / 2})`}>
                         <circle r="9" fill="#081511" stroke={defaultLineColor(drawing.type)} strokeWidth="1.8" />
                         <text y="3.4" textAnchor="middle" fill={defaultLineColor(drawing.type)} fontSize="8.5" fontWeight="950">{drawing.sequenceOrder}</text>

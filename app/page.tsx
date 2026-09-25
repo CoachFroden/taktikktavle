@@ -499,6 +499,8 @@ export default function Home() {
   const [formationTeam, setFormationTeam] = useState<Team>("blue");
   const [presentationMode, setPresentationMode] = useState(false);
   const [embeddedPresentation, setEmbeddedPresentation] = useState(false);
+  const [presentationReturnUrl, setPresentationReturnUrl] = useState<string | null>(null);
+  const [standaloneEmbeddedPresentation, setStandaloneEmbeddedPresentation] = useState(false);
   const [passFromId, setPassFromId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [pendingSequenceDirection, setPendingSequenceDirection] = useState<1 | -1 | null>(null);
@@ -511,6 +513,7 @@ export default function Home() {
     const params = new URLSearchParams(hash);
     const encodedPresentation = params.get("presentation");
     if (!encodedPresentation) return;
+    const returnUrl = params.get("return");
 
     try {
       const imported = decodeTransferPayload<PublishedPresentation>(encodedPresentation);
@@ -538,6 +541,8 @@ export default function Home() {
       setPlayhead(0);
       setPresentationMode(true);
       setEmbeddedPresentation(true);
+      setPresentationReturnUrl(returnUrl);
+      setStandaloneEmbeddedPresentation(window.self === window.top);
       setLineTypeVisibility({ arrow: true, run: true, rotation: true });
       setStatus("Presentasjon lastet.");
       document.body.classList.add("embeddedPresentation");
@@ -2313,6 +2318,18 @@ export default function Home() {
     setStatus(`${preset.label} lagt inn for ${formationTeam === "blue" ? "blått" : "rødt"} lag.`);
   }
 
+  function leaveEmbeddedPresentation() {
+    if (presentationReturnUrl) {
+      window.location.href = presentationReturnUrl;
+      return;
+    }
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    window.location.href = "/";
+  }
+
   function addPresentationToTraining() {
     try {
       const sourceUrl = window.location.origin + window.location.pathname;
@@ -2816,12 +2833,16 @@ export default function Home() {
             {presentationMode && (
               <div className="presentationTopbar">
                 <div><strong>{title}</strong><span>{currentScene.name}</span></div>
-                {!embeddedPresentation && (
+                {!embeddedPresentation ? (
                   <div className="presentationTopbarActions">
                     <button className="primaryButton addToTrainingButton" type="button" onClick={addPresentationToTraining}>＋ Legg til i trening</button>
                     <button className="ghostButton" type="button" onClick={() => setPresentationMode(false)}>✕ Avslutt presentasjon</button>
                   </div>
-                )}
+                ) : standaloneEmbeddedPresentation ? (
+                  <div className="presentationTopbarActions">
+                    <button className="ghostButton returnToTrainingButton" type="button" onClick={leaveEmbeddedPresentation}>← Tilbake til trening</button>
+                  </div>
+                ) : null}
               </div>
             )}
 

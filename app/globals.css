@@ -1221,6 +1221,9 @@ body.embeddedPresentation{
 body.embeddedPresentation .studioShell.presentationMode{
   min-height:100vh;
 }
+body.embeddedPresentation .pitchSvg{
+  pointer-events:none;
+}
 @media(max-width:760px){
   .presentationTopbar{
     align-items:flex-start;

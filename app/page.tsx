@@ -7,6 +7,7 @@ import type {
   ContextMenuEvent as ReactContextMenuEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
+import { getCloudSdk } from "./firebaseCloud";
 
 type Point = { x: number; y: number };
 type Team = "blue" | "red";
@@ -110,6 +111,23 @@ type PublishedPresentation = {
   sourceUrl: string;
 };
 
+type CloudUser = {
+  uid: string;
+  email: string;
+};
+
+type CloudBoard = {
+  id: string;
+  ownerUid: string;
+  title: string;
+  category: string;
+  pitch: PitchType;
+  pitchView: PitchView;
+  scenes: Scene[];
+  createdAt?: unknown;
+  updatedAt?: unknown;
+};
+
 type DrawingLine = {
   type: "arrow" | "run" | "rotation";
   start: Point;
@@ -182,6 +200,17 @@ const formations: Formation[] = [
   { id: "332", label: "9er · 3-3-2", pitch: "9er", rows: [3, 3, 2] },
   { id: "231", label: "7er · 2-3-1", pitch: "7er", rows: [2, 3, 1] },
   { id: "121", label: "5er · 1-2-1", pitch: "5er", rows: [1, 2, 1] },
+];
+
+const tacticCategories = [
+  "Taktikk",
+  "Pasning",
+  "Angrep",
+  "Forsvar",
+  "Dødball",
+  "Oppvarming",
+  "Øvelse",
+  "Kampplan",
 ];
 
 const lineColors = [
@@ -505,6 +534,88 @@ export default function Home() {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [pendingSequenceDirection, setPendingSequenceDirection] = useState<1 | -1 | null>(null);
   const [openToolPanel, setOpenToolPanel] = useState<string | null>("Bygg");
+  const [cloudUser, setCloudUser] = useState<CloudUser | null>(null);
+  const [cloudAuthReady, setCloudAuthReady] = useState(false);
+  const [cloudModalOpen, setCloudModalOpen] = useState(false);
+  const [cloudBoards, setCloudBoards] = useState<CloudBoard[]>([]);
+  const [cloudLoading, setCloudLoading] = useState(false);
+  const [cloudMessage, setCloudMessage] = useState("");
+  const [cloudEmail, setCloudEmail] = useState("");
+  const [cloudPassword, setCloudPassword] = useState("");
+  const [cloudCategory, setCloudCategory] = useState("Taktikk");
+  const [activeCloudBoardId, setActiveCloudBoardId] = useState<string | null>(null);
+  const [pendingCloudSave, setPendingCloudSave] = useState(false);
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    let disposed = false;
+
+    getCloudSdk()
+      .then(({ auth, authApi, db, firestoreApi }) => {
+        unsubscribe = authApi.onAuthStateChanged(auth, async (firebaseUser: any) => {
+          if (disposed) return;
+          if (!firebaseUser) {
+            setCloudUser(null);
+            setCloudBoards([]);
+            setCloudAuthReady(true);
+            return;
+          }
+
+          try {
+            const profile = await firestoreApi.getDoc(firestoreApi.doc(db, "users", firebaseUser.uid));
+            const role = profile.exists() ? profile.data()?.role : null;
+            if (role !== "coach" && role !== "assistantCoach") {
+              await authApi.signOut(auth);
+              setCloudMessage("Denne innloggingen er kun for trenerteamet.");
+              setCloudUser(null);
+              setCloudBoards([]);
+              setCloudAuthReady(true);
+              return;
+            }
+
+            const user = { uid: firebaseUser.uid, email: firebaseUser.email || "" };
+            setCloudUser(user);
+            setCloudEmail(firebaseUser.email || "");
+            setCloudAuthReady(true);
+            void loadCloudBoards(firebaseUser.uid);
+          } catch (error) {
+            console.error("Kunne ikke kontrollere trenerkonto:", error);
+            setCloudMessage("Kunne ikke kontrollere trenerkontoen.");
+            setCloudAuthReady(true);
+          }
+        });
+      })
+      .catch((error) => {
+        console.error("Kunne ikke starte skylagring:", error);
+        setCloudMessage("Skylagring kunne ikke startes.");
+        setCloudAuthReady(true);
+      });
+
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (embeddedPresentation) return;
+    const timer = window.setTimeout(() => {
+      try {
+        localStorage.setItem("taktikktavle-v2", JSON.stringify({ version: 2, title, pitch, pitchView, scenes }));
+      } catch {
+        // Local autosave is only a fallback; cloud save can still work.
+      }
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [title, pitch, pitchView, scenes, embeddedPresentation]);
+
+  useEffect(() => {
+    if (!cloudUser || !pendingCloudSave) return;
+    setPendingCloudSave(false);
+    void saveBoardCloud(cloudUser.uid);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloudUser, pendingCloudSave]);
 
   useEffect(() => {
     const queryReturnUrl = new URLSearchParams(window.location.search).get("return");
@@ -2360,12 +2471,226 @@ export default function Home() {
     }
   }
 
-  function saveBoard() {
+  function cloudTimestampMs(value: any) {
+    if (!value) return 0;
+    if (typeof value.toMillis === "function") return value.toMillis();
+    if (Number.isFinite(value.seconds)) return value.seconds * 1000;
+    if (Number.isFinite(value._seconds)) return value._seconds * 1000;
+    return 0;
+  }
+
+  async function loadCloudBoards(uidOverride?: string) {
+    const uid = uidOverride || cloudUser?.uid;
+    if (!uid) return;
+    setCloudLoading(true);
+    try {
+      const { db, firestoreApi } = await getCloudSdk();
+      const snapshot = await firestoreApi.getDocs(
+        firestoreApi.query(
+          firestoreApi.collection(db, "tacticsBoards"),
+          firestoreApi.where("ownerUid", "==", uid),
+        ),
+      );
+      const rows = snapshot.docs
+        .map((item: any) => ({ id: item.id, ...item.data() } as CloudBoard))
+        .sort((a: CloudBoard, b: CloudBoard) => cloudTimestampMs(b.updatedAt) - cloudTimestampMs(a.updatedAt));
+      setCloudBoards(rows);
+    } catch (error) {
+      console.error("Kunne ikke hente taktikker:", error);
+      setCloudMessage("Kunne ikke hente Mine taktikker. Sjekk at Firestore-reglene er publisert.");
+    } finally {
+      setCloudLoading(false);
+    }
+  }
+
+  async function signInCloud(event?: React.FormEvent) {
+    event?.preventDefault();
+    if (!cloudEmail.trim() || !cloudPassword) {
+      setCloudMessage("Skriv inn e-post og passord.");
+      return;
+    }
+    setCloudLoading(true);
+    setCloudMessage("");
+    try {
+      const { auth, authApi } = await getCloudSdk();
+      await authApi.signInWithEmailAndPassword(auth, cloudEmail.trim(), cloudPassword);
+      setCloudPassword("");
+    } catch (error) {
+      console.error("Innlogging til Mine taktikker feilet:", error);
+      setCloudMessage("Feil e-post eller passord.");
+    } finally {
+      setCloudLoading(false);
+    }
+  }
+
+  async function signOutCloud() {
+    try {
+      const { auth, authApi } = await getCloudSdk();
+      await authApi.signOut(auth);
+      setActiveCloudBoardId(null);
+      setCloudMessage("Logget ut av skylagringen.");
+    } catch (error) {
+      console.error("Kunne ikke logge ut av skylagringen:", error);
+    }
+  }
+
+  function openCloudLibrary() {
+    setCloudMessage("");
+    setCloudModalOpen(true);
+    if (cloudUser) void loadCloudBoards();
+  }
+
+  async function saveBoardCloud(uidOverride?: string) {
+    const uid = uidOverride || cloudUser?.uid;
+    if (!uid) {
+      setPendingCloudSave(true);
+      setCloudMessage("Logg inn med trenerkontoen for å lagre taktikken i skyen.");
+      setCloudModalOpen(true);
+      return;
+    }
+
+    setCloudLoading(true);
+    setCloudMessage("");
+    try {
+      const { db, firestoreApi } = await getCloudSdk();
+      const payload = {
+        ownerUid: uid,
+        title: title.trim() || "Ny taktikk",
+        category: cloudCategory,
+        pitch,
+        pitchView,
+        scenes: clone(scenes),
+        updatedAt: firestoreApi.serverTimestamp(),
+      };
+
+      let boardId = activeCloudBoardId;
+      if (boardId) {
+        await firestoreApi.setDoc(
+          firestoreApi.doc(db, "tacticsBoards", boardId),
+          payload,
+          { merge: true },
+        );
+      } else {
+        const ref = firestoreApi.doc(firestoreApi.collection(db, "tacticsBoards"));
+        boardId = ref.id;
+        await firestoreApi.setDoc(ref, {
+          ...payload,
+          createdAt: firestoreApi.serverTimestamp(),
+        });
+        setActiveCloudBoardId(boardId);
+      }
+
+      try {
+        localStorage.setItem("taktikktavle-v2", JSON.stringify({ version: 2, title, pitch, pitchView, scenes }));
+      } catch {
+        // Cloud save succeeded even if local fallback fails.
+      }
+
+      setStatus("Taktikken er lagret i Mine taktikker.");
+      setCloudMessage("Lagret ✓");
+      await loadCloudBoards(uid);
+    } catch (error) {
+      console.error("Kunne ikke lagre taktikken i skyen:", error);
+      setStatus("Kunne ikke lagre i Mine taktikker.");
+      setCloudMessage("Kunne ikke lagre. Sjekk innlogging og Firestore-regler.");
+      setCloudModalOpen(true);
+    } finally {
+      setCloudLoading(false);
+    }
+  }
+
+  function openCloudBoard(board: CloudBoard) {
+    if (!pitchConfig[board.pitch] || !pitchViews[board.pitchView] || !Array.isArray(board.scenes) || board.scenes.length === 0) {
+      setCloudMessage("Denne taktikken har et ugyldig format.");
+      return;
+    }
+    const restoredScenes = clone(board.scenes);
+    restoredScenes.forEach((scene) => recalculateHiddenLineTiming(scene));
+    setTitle(board.title || "Ny taktikk");
+    setPitch(board.pitch);
+    setPitchView(board.pitchView);
+    setScenes(restoredScenes);
+    setSceneIndex(0);
+    setSelectedId(null);
+    setSelectedLineId(null);
+    setTimingLinkDraft(null);
+    setHistoryPast([]);
+    setHistoryFuture([]);
+    setPlayhead(0);
+    setActiveCloudBoardId(board.id);
+    setCloudCategory(board.category || "Taktikk");
+    setCloudModalOpen(false);
+    setStatus(`«${board.title || "Taktikk"}» åpnet fra Mine taktikker.`);
+  }
+
+  async function duplicateCloudBoard(board: CloudBoard) {
+    if (!cloudUser) return;
+    setCloudLoading(true);
+    try {
+      const { db, firestoreApi } = await getCloudSdk();
+      const ref = firestoreApi.doc(firestoreApi.collection(db, "tacticsBoards"));
+      await firestoreApi.setDoc(ref, {
+        ownerUid: cloudUser.uid,
+        title: `${board.title || "Taktikk"} – kopi`,
+        category: board.category || "Taktikk",
+        pitch: board.pitch,
+        pitchView: board.pitchView,
+        scenes: clone(board.scenes),
+        createdAt: firestoreApi.serverTimestamp(),
+        updatedAt: firestoreApi.serverTimestamp(),
+      });
+      await loadCloudBoards();
+      setCloudMessage("Kopi opprettet.");
+    } catch (error) {
+      console.error("Kunne ikke duplisere taktikken:", error);
+      setCloudMessage("Kunne ikke duplisere taktikken.");
+    } finally {
+      setCloudLoading(false);
+    }
+  }
+
+  async function deleteCloudBoard(board: CloudBoard) {
+    if (!cloudUser || !window.confirm(`Slette «${board.title}» fra Mine taktikker?`)) return;
+    setCloudLoading(true);
+    try {
+      const { db, firestoreApi } = await getCloudSdk();
+      await firestoreApi.deleteDoc(firestoreApi.doc(db, "tacticsBoards", board.id));
+      if (activeCloudBoardId === board.id) setActiveCloudBoardId(null);
+      await loadCloudBoards();
+      setCloudMessage("Taktikken er slettet.");
+    } catch (error) {
+      console.error("Kunne ikke slette taktikken:", error);
+      setCloudMessage("Kunne ikke slette taktikken.");
+    } finally {
+      setCloudLoading(false);
+    }
+  }
+
+  function newCloudBoard() {
+    setTitle("Ny taktikk");
+    setPitch("11er");
+    setPitchView("full");
+    setScenes([createEmptyScene()]);
+    setSceneIndex(0);
+    setSelectedId(null);
+    setSelectedLineId(null);
+    setTimingLinkDraft(null);
+    setHistoryPast([]);
+    setHistoryFuture([]);
+    setPlayhead(0);
+    setCloudCategory("Taktikk");
+    setActiveCloudBoardId(null);
+    setCloudModalOpen(false);
+    setStatus("Ny taktikk klar.");
+  }
+
+  function saveBoardLocal() {
     try {
       localStorage.setItem("taktikktavle-v2", JSON.stringify({ version: 2, title, pitch, pitchView, scenes }));
-      setStatus("Prosjektet er lagret i denne nettleseren.");
+      setStatus("Lokal sikkerhetskopi er lagret.");
+      setCloudMessage("Lokal sikkerhetskopi lagret.");
     } catch {
-      setStatus("Kunne ikke lagre i nettleseren.");
+      setStatus("Kunne ikke lagre lokalt.");
     }
   }
 
@@ -2387,7 +2712,8 @@ export default function Home() {
         setHistoryPast([]);
         setHistoryFuture([]);
         setPlayhead(0);
-        setStatus("Lagret V2-prosjekt åpnet.");
+        setActiveCloudBoardId(null);
+        setStatus("Lokal sikkerhetskopi åpnet.");
         return;
       }
 
@@ -2407,7 +2733,8 @@ export default function Home() {
       setHistoryPast([]);
       setHistoryFuture([]);
       setPlayhead(0);
-      setStatus("Gammel tavle åpnet og oppgradert til V2-format.");
+      setActiveCloudBoardId(null);
+      setStatus("Gammel lokal tavle åpnet og oppgradert til V2-format.");
     } catch {
       setStatus("Den lagrede tavlen kunne ikke leses.");
     }
@@ -2567,11 +2894,11 @@ export default function Home() {
             <button className="iconButton" type="button" onClick={undo} disabled={historyPast.length === 0} title="Angre (Ctrl/Cmd+Z)">↶</button>
             <button className="iconButton" type="button" onClick={redo} disabled={historyFuture.length === 0} title="Gjør om">↷</button>
             <span className="headerDivider" />
-            <button className="ghostButton" type="button" onClick={loadBoard}>Åpne</button>
+            <button className="ghostButton cloudLibraryButton" type="button" onClick={openCloudLibrary}>☁ Mine taktikker</button>
             <button className="ghostButton" type="button" onClick={exportPng}>Eksporter PNG</button>
             <button className="ghostButton" type="button" onClick={() => window.print()}>⌁ Skriv ut</button>
             <button className="ghostButton" type="button" onClick={() => setPresentationMode(true)}>◱ Presenter</button>
-            <button className="primaryButton" type="button" onClick={saveBoard}>Lagre</button>
+            <button className="primaryButton cloudSaveButton" type="button" onClick={() => void saveBoardCloud()} disabled={cloudLoading}>☁ Lagre</button>
           </div>
         </header>
       )}
@@ -3553,6 +3880,110 @@ export default function Home() {
           </aside>
         )}
       </div>
+
+      {cloudModalOpen && !presentationMode && (
+        <div className="cloudLibraryModal" role="dialog" aria-modal="true" aria-labelledby="cloudLibraryTitle">
+          <button className="cloudLibraryBackdrop" type="button" aria-label="Lukk Mine taktikker" onClick={() => setCloudModalOpen(false)} />
+          <section className="cloudLibrarySheet">
+            <header className="cloudLibraryHeader">
+              <div>
+                <span className="eyebrow">SKYLAGRING</span>
+                <h2 id="cloudLibraryTitle">Mine taktikker</h2>
+                <p>Lagret i Firebase og tilgjengelig på alle enhetene dine.</p>
+              </div>
+              <button className="cloudCloseButton" type="button" onClick={() => setCloudModalOpen(false)} aria-label="Lukk">×</button>
+            </header>
+
+            {!cloudAuthReady ? (
+              <div className="cloudLoadingState">Kobler til trenerkonto …</div>
+            ) : !cloudUser ? (
+              <form className="cloudLoginCard" onSubmit={signInCloud}>
+                <div className="cloudLoginIcon">☁</div>
+                <div>
+                  <strong>Logg inn med trenerkontoen</strong>
+                  <p>Bruk samme e-post og passord som på Coach-siden.</p>
+                </div>
+                <label>
+                  E-post
+                  <input value={cloudEmail} onChange={(event) => setCloudEmail(event.target.value)} type="email" autoComplete="email" />
+                </label>
+                <label>
+                  Passord
+                  <input value={cloudPassword} onChange={(event) => setCloudPassword(event.target.value)} type="password" autoComplete="current-password" />
+                </label>
+                <button className="primaryButton full" type="submit" disabled={cloudLoading}>{cloudLoading ? "Logger inn …" : "Logg inn"}</button>
+                {cloudMessage && <p className="cloudMessage">{cloudMessage}</p>}
+              </form>
+            ) : (
+              <>
+                <div className="cloudAccountBar">
+                  <div><span>Innlogget som</span><strong>{cloudUser.email}</strong></div>
+                  <button type="button" onClick={() => void signOutCloud()}>Logg ut</button>
+                </div>
+
+                <div className="cloudCurrentCard">
+                  <div>
+                    <span className="eyebrow">AKTIV TAKTIKK</span>
+                    <strong>{title.trim() || "Ny taktikk"}</strong>
+                    <small>{activeCloudBoardId ? "Endringer lagres tilbake til denne taktikken." : "Ikke lagret i skyen ennå."}</small>
+                  </div>
+                  <label>
+                    Kategori
+                    <select value={cloudCategory} onChange={(event) => setCloudCategory(event.target.value)}>
+                      {tacticCategories.map((category) => <option key={category}>{category}</option>)}
+                    </select>
+                  </label>
+                  <button className="primaryButton" type="button" onClick={() => void saveBoardCloud()} disabled={cloudLoading}>
+                    {activeCloudBoardId ? "Lagre endringer" : "Lagre som ny"}
+                  </button>
+                </div>
+
+                <div className="cloudLibraryToolbar">
+                  <div>
+                    <span className="eyebrow">BIBLIOTEK</span>
+                    <strong>{cloudBoards.length} {cloudBoards.length === 1 ? "taktikk" : "taktikker"}</strong>
+                  </div>
+                  <button className="secondaryButton" type="button" onClick={newCloudBoard}>＋ Ny taktikk</button>
+                </div>
+
+                <div className="cloudBoardList">
+                  {cloudLoading && cloudBoards.length === 0 ? (
+                    <div className="cloudLoadingState">Henter taktikker …</div>
+                  ) : cloudBoards.length === 0 ? (
+                    <div className="cloudEmptyState">
+                      <span>☁</span>
+                      <strong>Ingen taktikker lagret ennå</strong>
+                      <p>Lagre tavlen du jobber med, så ligger den her neste gang — også på en annen enhet.</p>
+                    </div>
+                  ) : cloudBoards.map((board) => (
+                    <article className={`cloudBoardCard ${activeCloudBoardId === board.id ? "active" : ""}`} key={board.id}>
+                      <div className="cloudBoardPitch" aria-hidden="true"><span>⚽</span></div>
+                      <div className="cloudBoardInfo">
+                        <div className="cloudBoardTags"><span>{board.category || "Taktikk"}</span><em>{board.pitch}</em></div>
+                        <strong>{board.title || "Uten navn"}</strong>
+                        <small>{board.scenes?.length || 0} {(board.scenes?.length || 0) === 1 ? "scene" : "scener"} · {cloudTimestampMs(board.updatedAt) ? new Date(cloudTimestampMs(board.updatedAt)).toLocaleDateString("no-NO", { day: "numeric", month: "short", year: "numeric" }) : "nettopp lagret"}</small>
+                      </div>
+                      <div className="cloudBoardActions">
+                        <button className="cloudOpenButton" type="button" onClick={() => openCloudBoard(board)}>Åpne</button>
+                        <button type="button" onClick={() => void duplicateCloudBoard(board)}>Kopi</button>
+                        <button className="dangerText" type="button" onClick={() => void deleteCloudBoard(board)}>Slett</button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+
+                <div className="cloudLocalBackup">
+                  <div><strong>Lokal sikkerhetskopi</strong><small>Beholdes som reserve på denne enheten.</small></div>
+                  <button type="button" onClick={loadBoard}>Åpne lokal</button>
+                  <button type="button" onClick={saveBoardLocal}>Lagre lokal</button>
+                </div>
+
+                {cloudMessage && <p className="cloudMessage success">{cloudMessage}</p>}
+              </>
+            )}
+          </section>
+        </div>
+      )}
     </main>
   );
 }

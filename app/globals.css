@@ -1993,7 +1993,7 @@ body.embeddedPresentation .presentationMode .pitchSvg{
 @media (max-width: 620px) {
   body.embeddedPresentation .presentationMode .playbackDock{
     flex-wrap:wrap;
-    overflow:hidden;
+    overflow:visible;
   }
 
   body.embeddedPresentation .presentationMode .scrubber{
@@ -2034,7 +2034,7 @@ body.embeddedPresentation .presentationMode .pitchSvg{
     flex-wrap:nowrap;
     align-content:center;
     justify-content:center;
-    overflow:hidden;
+    overflow:visible;
     gap:3px;
   }
 
@@ -2127,4 +2127,17 @@ body.embeddedPresentation .presentationMode .pitchSvg{
   body.embeddedPresentation .presentationMode .lineVisibilityControls .miniButton{
     padding-inline:5px;
   }
+}
+
+
+/* 2026-09-26 keep scrub time bubble above the pitch */
+body.embeddedPresentation .presentationMode .playbackDock{
+  position:relative;
+  z-index:40;
+}
+body.embeddedPresentation .presentationMode .scrubberWrap{
+  overflow:visible;
+}
+body.embeddedPresentation .presentationMode .scrubberTimeBubble{
+  z-index:50;
 }

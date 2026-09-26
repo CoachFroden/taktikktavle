@@ -2081,3 +2081,50 @@ body.embeddedPresentation .presentationMode .pitchSvg{
     flex-basis:48px;
   }
 }
+
+
+/* 2026-09-26 transient scrub time + lean line filters */
+.scrubberWrap{
+  position:relative;
+  flex:1 1 220px;
+  min-width:110px;
+  display:flex;
+  align-items:center;
+}
+.scrubberWrap .scrubber{
+  width:100%;
+  min-width:0;
+  flex:1 1 auto;
+}
+.scrubberTimeBubble{
+  position:absolute;
+  z-index:12;
+  bottom:calc(100% + 7px);
+  transform:translateX(-50%);
+  padding:3px 6px;
+  border:1px solid rgba(255,255,255,.15);
+  border-radius:7px;
+  background:rgba(3,12,16,.94);
+  color:#eef7f2;
+  box-shadow:0 5px 14px rgba(0,0,0,.30);
+  font-size:.58rem;
+  font-weight:900;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+  pointer-events:none;
+}
+@media(max-width:620px){
+  body.embeddedPresentation .presentationMode .scrubberWrap{
+    flex:1 1 80px;
+    min-width:65px;
+  }
+}
+@media (orientation: landscape) and (max-height:560px) and (pointer:coarse){
+  body.embeddedPresentation .presentationMode .scrubberWrap{
+    flex:1 1 110px;
+    min-width:80px;
+  }
+  body.embeddedPresentation .presentationMode .lineVisibilityControls .miniButton{
+    padding-inline:5px;
+  }
+}

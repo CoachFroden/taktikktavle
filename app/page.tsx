@@ -3192,7 +3192,7 @@ export default function Home() {
                   </div>
                 ) : (
                   <div className="presentationTopbarActions">
-                    {standaloneEmbeddedPresentation && (
+                    {standaloneEmbeddedPresentation && !presentationReturnUrl?.includes("/spillerportal") && (
                       <button className="primaryButton recoverPresentationButton" type="button" onClick={recoverEmbeddedPresentationAsBoard}>↺ Gjenopprett som taktikk</button>
                     )}
                     {standaloneEmbeddedPresentation && (

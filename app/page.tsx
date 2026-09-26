@@ -877,6 +877,58 @@ export default function Home() {
     resetView(nextView);
   }
 
+  function changePitchType(nextPitch: PitchType) {
+    setPitch(nextPitch);
+    if (nextPitch === "training50x64") {
+      setPitchView("full");
+      resetView("full");
+      setStatus("Treningsflate 50 × 64 m. Dra de gule målhåndtakene innover for å korte banen.");
+    }
+  }
+
+  function updateTrainingGoal(side: "left" | "right", pointX: number) {
+    const unitsPerMeter = 940 / 50;
+    setTrainingPitch((current) => {
+      const otherInset = side === "left" ? current.rightInsetM : current.leftInsetM;
+      const rawMeters = side === "left"
+        ? (pointX - 30) / unitsPerMeter
+        : (970 - pointX) / unitsPerMeter;
+      const maxInset = current.linked ? 15 : Math.max(0, 30 - otherInset);
+      const meters = clamp(Math.round(rawMeters), 0, maxInset);
+
+      if (current.linked) {
+        return { ...current, leftInsetM: meters, rightInsetM: meters };
+      }
+      return side === "left"
+        ? { ...current, leftInsetM: meters }
+        : { ...current, rightInsetM: meters };
+    });
+  }
+
+  function beginTrainingGoalDrag(event: ReactPointerEvent<SVGGElement>, side: "left" | "right") {
+    if (presentationMode) return;
+    event.stopPropagation();
+    setTrainingGoalDragging(side);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    updateTrainingGoal(side, boardPoint(event).x);
+  }
+
+  function moveTrainingGoal(event: ReactPointerEvent<SVGGElement>, side: "left" | "right") {
+    if (presentationMode || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    event.stopPropagation();
+    updateTrainingGoal(side, boardPoint(event).x);
+  }
+
+  function endTrainingGoalDrag(event: ReactPointerEvent<SVGGElement>) {
+    event.stopPropagation();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setTrainingGoalDragging(null);
+    const activeLength = 50 - trainingPitch.leftInsetM - trainingPitch.rightInsetM;
+    setStatus(`Spillflate: ${activeLength} × 64 m.`);
+  }
+
   function stopAnimation(reset = false) {
     if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
     animationRef.current = null;
@@ -2483,6 +2535,7 @@ export default function Home() {
         pitchView,
         scenes: clone(scenes),
         sourceUrl,
+        trainingPitch: clone(trainingPitch),
       };
       const transfer = encodeTransferPayload(payload);
       const plannerUrl = "https://coachtool1.vercel.app/ukens-ovelser.html";
@@ -2589,6 +2642,7 @@ export default function Home() {
         pitch,
         pitchView,
         scenes: clone(scenes),
+        trainingPitch: clone(trainingPitch),
         updatedAt: firestoreApi.serverTimestamp(),
       };
 
@@ -2610,7 +2664,7 @@ export default function Home() {
       }
 
       try {
-        localStorage.setItem("taktikktavle-v2", JSON.stringify({ version: 2, title, pitch, pitchView, scenes }));
+        localStorage.setItem("taktikktavle-v2", JSON.stringify({ version: 2, title, pitch, pitchView, scenes, trainingPitch }));
       } catch {
         // Cloud save succeeded even if local fallback fails.
       }
@@ -2638,6 +2692,7 @@ export default function Home() {
     setTitle(board.title || "Ny taktikk");
     setPitch(board.pitch);
     setPitchView(board.pitchView);
+    setTrainingPitch(board.trainingPitch ?? { leftInsetM: 0, rightInsetM: 0, linked: true });
     setScenes(restoredScenes);
     setSceneIndex(0);
     setSelectedId(null);
@@ -2665,6 +2720,7 @@ export default function Home() {
         pitch: board.pitch,
         pitchView: board.pitchView,
         scenes: clone(board.scenes),
+        trainingPitch: clone(board.trainingPitch ?? { leftInsetM: 0, rightInsetM: 0, linked: true }),
         createdAt: firestoreApi.serverTimestamp(),
         updatedAt: firestoreApi.serverTimestamp(),
       });
@@ -2699,6 +2755,7 @@ export default function Home() {
     setTitle("Ny taktikk");
     setPitch("11er");
     setPitchView("full");
+    setTrainingPitch({ leftInsetM: 0, rightInsetM: 0, linked: true });
     setScenes([createEmptyScene()]);
     setSceneIndex(0);
     setSelectedId(null);
@@ -2717,7 +2774,7 @@ export default function Home() {
     try {
       const existing = localStorage.getItem("taktikktavle-v2");
       if (existing) localStorage.setItem("taktikktavle-v2-backup", existing);
-      localStorage.setItem("taktikktavle-v2", JSON.stringify({ version: 2, title, pitch, pitchView, scenes }));
+      localStorage.setItem("taktikktavle-v2", JSON.stringify({ version: 2, title, pitch, pitchView, scenes, trainingPitch }));
       setStatus("Lokal sikkerhetskopi er lagret.");
       setCloudMessage("Lokal sikkerhetskopi lagret.");
     } catch {
@@ -2729,10 +2786,11 @@ export default function Home() {
     try {
       const v2 = localStorage.getItem("taktikktavle-v2") || localStorage.getItem("taktikktavle-autosave-v2");
       if (v2) {
-        const parsed = JSON.parse(v2) as { title?: string; pitch?: PitchType; pitchView?: PitchView; scenes?: Scene[] };
+        const parsed = JSON.parse(v2) as { title?: string; pitch?: PitchType; pitchView?: PitchView; scenes?: Scene[]; trainingPitch?: TrainingPitchSettings };
         if (parsed.title) setTitle(parsed.title);
         if (parsed.pitch && pitchConfig[parsed.pitch]) setPitch(parsed.pitch);
         if (parsed.pitchView && pitchViews[parsed.pitchView]) changePitchView(parsed.pitchView);
+        setTrainingPitch(parsed.trainingPitch ?? { leftInsetM: 0, rightInsetM: 0, linked: true });
         if (Array.isArray(parsed.scenes) && parsed.scenes.length) {
           const restoredScenes = clone(parsed.scenes);
           restoredScenes.forEach((scene) => recalculateHiddenLineTiming(scene));
@@ -2804,6 +2862,81 @@ export default function Home() {
   }
 
   function renderPitch() {
+    if (pitch === "training50x64") {
+      const unitsPerMeter = 940 / 50;
+      const leftGoalX = 30 + trainingPitch.leftInsetM * unitsPerMeter;
+      const rightGoalX = 970 - trainingPitch.rightInsetM * unitsPerMeter;
+      const activeLength = 50 - trainingPitch.leftInsetM - trainingPitch.rightInsetM;
+      const goalTop = 291;
+      const goalBottom = 359;
+      const goalDepth = 18;
+      const draggingInset = trainingGoalDragging === "left" ? trainingPitch.leftInsetM : trainingPitch.rightInsetM;
+      const draggingX = trainingGoalDragging === "left" ? leftGoalX : rightGoalX;
+      return (
+        <>
+          <defs>
+            <linearGradient id="pitchGlow" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#17683d" />
+              <stop offset="55%" stopColor="#1d7a46" />
+              <stop offset="100%" stopColor="#125b36" />
+            </linearGradient>
+          </defs>
+          <rect className="pitchBackground" x="0" y="0" width="1000" height="650" fill="url(#pitchGlow)" />
+          {Array.from({ length: 10 }).map((_, index) => (
+            <rect className="pitchStripe" key={index} x={index * 100} y="0" width="100" height="650" fill={index % 2 === 0 ? "rgba(255,255,255,.026)" : "rgba(0,0,0,.026)"} />
+          ))}
+          <g className="pitchMarkings trainingPitchMarkings" fill="none" stroke="rgba(255,255,255,.92)" strokeWidth="3.5">
+            <rect x="30" y="30" width="940" height="590" rx="3" />
+            <path d={`M ${leftGoalX} ${goalTop} H ${leftGoalX - goalDepth} V ${goalBottom} H ${leftGoalX}`} />
+            <line x1={leftGoalX} y1={goalTop} x2={leftGoalX} y2={goalBottom} />
+            <path d={`M ${rightGoalX} ${goalTop} H ${rightGoalX + goalDepth} V ${goalBottom} H ${rightGoalX}`} />
+            <line x1={rightGoalX} y1={goalTop} x2={rightGoalX} y2={goalBottom} />
+          </g>
+
+          {!presentationMode && (
+            <>
+              <g
+                className="trainingGoalHandle"
+                transform={`translate(${leftGoalX} 385)`}
+                onPointerDown={(event) => beginTrainingGoalDrag(event, "left")}
+                onPointerMove={(event) => moveTrainingGoal(event, "left")}
+                onPointerUp={endTrainingGoalDrag}
+                onPointerCancel={endTrainingGoalDrag}
+              >
+                <circle r="17" fill="transparent" />
+                <circle r="9" />
+                <path d="M-4 0 H4 M-4 0 L-1 -3 M-4 0 L-1 3 M4 0 L1 -3 M4 0 L1 3" />
+              </g>
+              <g
+                className="trainingGoalHandle"
+                transform={`translate(${rightGoalX} 385)`}
+                onPointerDown={(event) => beginTrainingGoalDrag(event, "right")}
+                onPointerMove={(event) => moveTrainingGoal(event, "right")}
+                onPointerUp={endTrainingGoalDrag}
+                onPointerCancel={endTrainingGoalDrag}
+              >
+                <circle r="17" fill="transparent" />
+                <circle r="9" />
+                <path d="M-4 0 H4 M-4 0 L-1 -3 M-4 0 L-1 3 M4 0 L1 -3 M4 0 L1 3" />
+              </g>
+            </>
+          )}
+
+          <g className="trainingPitchMeasure" pointerEvents="none">
+            <rect x="432" y="42" width="136" height="34" rx="17" />
+            <text x="500" y="64" textAnchor="middle">{activeLength} × 64 m</text>
+          </g>
+
+          {trainingGoalDragging && (
+            <g className="trainingGoalMeter" pointerEvents="none" transform={`translate(${draggingX} 250)`}>
+              <rect x="-39" y="-16" width="78" height="30" rx="10" />
+              <text x="0" y="4" textAnchor="middle">{draggingInset} m inn</text>
+            </g>
+          )}
+        </>
+      );
+    }
+
     const penaltyY = (650 - config.penaltyHeight) / 2;
     const goalY = (650 - config.goalHeight) / 2;
     return (
@@ -3177,12 +3310,32 @@ export default function Home() {
             <div className="workspaceToolbar glassPanel">
               <div className="toolbarGroup">
                 <span className="toolbarLabel">Bane</span>
-                <select className="darkSelect compact" value={pitch} onChange={(event) => setPitch(event.target.value as PitchType)}>
-                  <option value="11er">11er</option><option value="9er">9er</option><option value="7er">7er</option><option value="5er">5er</option>
+                <select className="darkSelect compact" value={pitch} onChange={(event) => changePitchType(event.target.value as PitchType)}>
+                  <option value="11er">11er</option><option value="9er">9er</option><option value="7er">7er</option><option value="5er">5er</option><option value="training50x64">Treningsflate 50×64</option>
                 </select>
-                <select className="darkSelect compact wide" value={pitchView} onChange={(event) => changePitchView(event.target.value as PitchView)}>
+                <select className="darkSelect compact wide" value={pitchView} onChange={(event) => changePitchView(event.target.value as PitchView)} disabled={pitch === "training50x64"}>
                   {Object.entries(pitchViews).map(([id, view]) => <option key={id} value={id}>{view.label}</option>)}
                 </select>
+                {pitch === "training50x64" && (
+                  <div className="trainingPitchToolbar">
+                    <span className="trainingPitchSize">{50 - trainingPitch.leftInsetM - trainingPitch.rightInsetM} × 64 m</span>
+                    <button
+                      className={`miniButton text trainingLinkButton ${trainingPitch.linked ? "active" : ""}`}
+                      type="button"
+                      onClick={() => setTrainingPitch((current) => ({ ...current, linked: !current.linked }))}
+                      title="Koble målene slik at de flyttes like langt inn"
+                    >
+                      {trainingPitch.linked ? "🔗 Koblet" : "↔ Frie mål"}
+                    </button>
+                    <button
+                      className="miniButton text"
+                      type="button"
+                      onClick={() => setTrainingPitch((current) => ({ ...current, leftInsetM: 0, rightInsetM: 0 }))}
+                    >
+                      Nullstill mål
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="toolbarGroup zoomControls">
                 <button className="miniButton" type="button" onClick={() => setZoom((current) => clamp(current - 0.25, 1, 3))}>−</button>

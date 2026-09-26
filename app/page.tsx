@@ -1332,6 +1332,22 @@ export default function Home() {
 
           if (receive) start = Math.max(start, receive.arrival);
 
+          // If a pass leaves from the same point where this movement starts,
+          // the player must not leave before that pass is actually struck.
+          // This is especially important for receive -> pass -> next run:
+          // later timing gates may otherwise back-calculate the run too early.
+          const outgoingPass = passLines
+            .filter((passLine) =>
+              passLine.timingStart !== undefined &&
+              pointDistance(passLine.start, movementLine.start) <= 18 &&
+              (passLine.timingStart ?? 0) >= start - 0.03
+            )
+            .sort((a, b) => (a.timingStart ?? 0) - (b.timingStart ?? 0))[0];
+
+          if (outgoingPass?.timingStart !== undefined) {
+            start = Math.max(start, outgoingPass.timingStart);
+          }
+
           movementLine.timingStart = start;
           movementLine.timingDuration = duration;
           cursor = start + duration;

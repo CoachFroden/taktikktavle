@@ -1292,22 +1292,45 @@ export default function Home() {
           const duration = durations[index];
           let start = cursor;
 
-          // From step 2 onward, a player must not leave a receiving point
-          // before the incoming ball has actually arrived there.
-          if (index > 0) {
-            const previousMovement = movementLines[index - 1];
-            const arrivals = passLines
-              .filter((passLine) =>
-                passLine.timingStart !== undefined &&
-                passLine.timingDuration !== undefined &&
-                passArrivesAtMovementStart(passLine, movementLine, previousMovement)
-              )
-              .map((passLine) => (passLine.timingStart ?? 0) + (passLine.timingDuration ?? 0))
-              .filter((arrival) => arrival >= cursor - 0.03)
-              .sort((a, b) => a - b);
+          // A player who has just received a pass must not start the next
+          // movement before the ball has actually arrived. This also works
+          // when the continuation was drawn as a new movement sequence.
+          const previousMovement = index > 0 ? movementLines[index - 1] : undefined;
+          const receiveCandidates = passLines
+            .filter((passLine) =>
+              passLine.timingStart !== undefined &&
+              passLine.timingDuration !== undefined &&
+              pointDistance(passLine.end, movementLine.start) <= 18
+            )
+            .map((passLine) => ({
+              passLine,
+              arrival: (passLine.timingStart ?? 0) + (passLine.timingDuration ?? 0),
+            }))
+            .filter(({ arrival }) => arrival >= cursor - 0.03)
+            .sort((a, b) => a.arrival - b.arrival);
 
-            if (arrivals.length > 0) start = Math.max(start, arrivals[0]);
-          }
+          const receive = receiveCandidates.find(({ passLine, arrival }) => {
+            if (
+              previousMovement &&
+              passArrivesAtMovementStart(passLine, movementLine, previousMovement)
+            ) return true;
+
+            return animatedLines.some((candidate) => {
+              if (
+                candidate.id === movementLine.id ||
+                candidate.actorId !== movementLine.actorId ||
+                (candidate.animationKind !== "run" && candidate.animationKind !== "rotation") ||
+                candidate.timingStart === undefined ||
+                candidate.timingDuration === undefined ||
+                pointDistance(candidate.end, movementLine.start) > 18
+              ) return false;
+
+              const candidateArrival = candidate.timingStart + candidate.timingDuration;
+              return Math.abs(candidateArrival - arrival) <= 0.12;
+            });
+          });
+
+          if (receive) start = Math.max(start, receive.arrival);
 
           movementLine.timingStart = start;
           movementLine.timingDuration = duration;
@@ -1885,7 +1908,133 @@ export default function Home() {
     return clamp((time - start) / duration, 0, 1);
   }
 
+  function carriedBallPoint(ball: BoardObject, time = playhead): Point | null {
+    const passLines = lines
+      .filter((line) =>
+        line.actorId === ball.id &&
+        line.animationKind === "pass" &&
+        line.timingStart !== undefined &&
+        line.timingDuration !== undefined
+      )
+      .sort((a, b) => {
+        const timeDifference = (a.timingStart ?? 0) - (b.timingStart ?? 0);
+        if (Math.abs(timeDifference) > 0.001) return timeDifference;
+        return lines.indexOf(a) - lines.indexOf(b);
+      });
+
+    if (passLines.length === 0) return null;
+
+    let receivedPass: BoardLine | null = null;
+    let receivedAt = -1;
+
+    for (const passLine of passLines) {
+      const start = passLine.timingStart ?? 0;
+      const end = start + Math.max(0.01, passLine.timingDuration ?? 0.01);
+
+      // While the ball is travelling, its own pass line controls the position.
+      if (time >= start - 0.001 && time <= end + 0.001) return null;
+
+      if (end <= time && end > receivedAt) {
+        receivedPass = passLine;
+        receivedAt = end;
+      }
+    }
+
+    if (!receivedPass) return null;
+
+    const nextPass = passLines.find((passLine) =>
+      (passLine.timingStart ?? 0) > receivedAt + 0.001
+    );
+    const nextPassStart = nextPass?.timingStart;
+
+    if (nextPassStart !== undefined && time >= nextPassStart - 0.001) return null;
+
+    const movementCandidates = lines
+      .filter((line) =>
+        line.actorId &&
+        line.actorId !== ball.id &&
+        (line.animationKind === "run" || line.animationKind === "rotation") &&
+        line.timingStart !== undefined &&
+        line.timingDuration !== undefined &&
+        pointDistance(line.end, receivedPass.end) <= 18
+      )
+      .map((line) => {
+        const actor = objects.find((object) => object.id === line.actorId && object.type === "player");
+        const arrival = (line.timingStart ?? 0) + (line.timingDuration ?? 0);
+        if (!actor) return null;
+
+        const continuation = lines.some((candidate) =>
+          candidate.actorId === actor.id &&
+          (candidate.animationKind === "run" || candidate.animationKind === "rotation") &&
+          candidate.timingStart !== undefined &&
+          pointDistance(candidate.start, receivedPass.end) <= 18 &&
+          (candidate.timingStart ?? 0) >= receivedAt - 0.05
+        );
+
+        return {
+          actor,
+          score:
+            pointDistance(line.end, receivedPass.end) +
+            Math.abs(arrival - receivedAt) * 90 -
+            (continuation ? 30 : 0),
+        };
+      })
+      .filter((candidate): candidate is { actor: BoardObject; score: number } => Boolean(candidate))
+      .sort((a, b) => a.score - b.score);
+
+    let carrier = movementCandidates[0]?.actor ?? null;
+
+    if (!carrier) {
+      const staticCandidates = objects
+        .filter((object) => object.type === "player")
+        .map((actor) => ({
+          actor,
+          distance: pointDistance(displayPoint(actor, receivedAt), receivedPass.end),
+        }))
+        .filter(({ distance }) => distance <= 18)
+        .sort((a, b) => a.distance - b.distance);
+      carrier = staticCandidates[0]?.actor ?? null;
+    }
+
+    if (!carrier) return null;
+
+    const carrierPoint = displayPoint(carrier, time);
+    const sampleEnd = nextPassStart !== undefined
+      ? Math.min(nextPassStart, time + 0.08)
+      : time + 0.08;
+    const aheadPoint = displayPoint(carrier, sampleEnd);
+    const dx = aheadPoint.x - carrierPoint.x;
+    const dy = aheadPoint.y - carrierPoint.y;
+    const length = Math.hypot(dx, dy);
+
+    // Keep the ball visible just in front of the player while it is being
+    // carried, but let it meet the exact receive/departure point cleanly.
+    const fadeIn = clamp((time - receivedAt) / 0.12, 0, 1);
+    const fadeOut = nextPassStart !== undefined
+      ? clamp((nextPassStart - time) / 0.12, 0, 1)
+      : 1;
+    const offsetScale = Math.min(fadeIn, fadeOut);
+    const offset = 12 * offsetScale;
+
+    if (length > 0.05) {
+      return {
+        x: carrierPoint.x + (dx / length) * offset,
+        y: carrierPoint.y + (dy / length) * offset,
+      };
+    }
+
+    return {
+      x: carrierPoint.x + offset * 0.8,
+      y: carrierPoint.y + offset * 0.5,
+    };
+  }
+
   function displayPoint(object: BoardObject, time = playhead): Point {
+    if (object.type === "ball") {
+      const carriedPoint = carriedBallPoint(object, time);
+      if (carriedPoint) return carriedPoint;
+    }
+
     const timedLines = lines
       .filter((line) =>
         line.actorId === object.id &&

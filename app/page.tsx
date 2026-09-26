@@ -508,6 +508,7 @@ export default function Home() {
   const [historyPast, setHistoryPast] = useState<Scene[][]>([]);
   const [historyFuture, setHistoryFuture] = useState<Scene[][]>([]);
   const [playhead, setPlayhead] = useState(0);
+  const [scrubbing, setScrubbing] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [loopPlayback, setLoopPlayback] = useState(false);
   const [lineTypeVisibility, setLineTypeVisibility] = useState<Record<BoardLine["type"], boolean>>({
@@ -3558,8 +3559,34 @@ export default function Home() {
                 ↻ <span>Loop</span>
               </button>
               <button className={`playButton ${isPlaying && playDirectionRef.current === 1 ? "playing" : ""}`} type="button" onClick={toggleForward} title="Play / pause (mellomrom)">{isPlaying && playDirectionRef.current === 1 ? "❚❚" : "▶"}</button>
-              <div className="timeReadout"><strong>{playhead.toFixed(1)}</strong><span>/ {sceneDuration.toFixed(1)} s</span></div>
-              <input className="scrubber" type="range" min="0" max={sceneDuration} step="0.02" value={playhead} onChange={(event) => { if (animationRef.current !== null) cancelAnimationFrame(animationRef.current); setIsPlaying(false); setPlayhead(Number(event.target.value)); }} aria-label="Tidslinje" />
+              <div className="scrubberWrap">
+                {scrubbing && (
+                  <output
+                    className="scrubberTimeBubble"
+                    style={{ left: `${sceneDuration > 0 ? (playhead / sceneDuration) * 100 : 0}%` }}
+                  >
+                    {playhead.toFixed(1)} s
+                  </output>
+                )}
+                <input
+                  className="scrubber"
+                  type="range"
+                  min="0"
+                  max={sceneDuration}
+                  step="0.02"
+                  value={playhead}
+                  onPointerDown={() => setScrubbing(true)}
+                  onPointerUp={() => setScrubbing(false)}
+                  onPointerCancel={() => setScrubbing(false)}
+                  onBlur={() => setScrubbing(false)}
+                  onChange={(event) => {
+                    if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
+                    setIsPlaying(false);
+                    setPlayhead(Number(event.target.value));
+                  }}
+                  aria-label="Tidslinje"
+                />
+              </div>
               <div className="lineVisibilityControls" aria-label="Linjevisning">
                 <span className="playbackFilterLabel">Linjer:</span>
                 {([
@@ -3579,7 +3606,6 @@ export default function Home() {
                     <span className="typeColorDot" />{label}
                   </button>
                 ))}
-                <button className="miniButton text" type="button" onClick={hideAllLineTypes} title="Skjul alle pasnings-, løps- og rulleringslinjer">Ingen</button>
               </div>
               <select className="darkSelect speedSelect" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} aria-label="Avspillingsfart">
                 <option value={0.5}>0,5×</option><option value={1}>1×</option><option value={1.5}>1,5×</option><option value={2}>2×</option>

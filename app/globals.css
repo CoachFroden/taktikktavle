@@ -1923,3 +1923,54 @@ body.embeddedPresentation .presentationMode .pitchSvg{
     min-width:100px;
   }
 }
+
+
+/* 2026-09-26 final landscape presentation tightening */
+@media (orientation: landscape) and (max-height: 560px) and (pointer: coarse) {
+  body.embeddedPresentation .presentationMode .pitchCard{
+    padding:0;
+    border-radius:7px;
+  }
+
+  body.embeddedPresentation .presentationMode .pitchWrap{
+    border-radius:6px;
+  }
+
+  body.embeddedPresentation .presentationMode .returnToTrainingButton{
+    min-height:29px;
+    padding:4px 8px;
+    border-radius:8px;
+    font-size:.60rem;
+  }
+
+  body.embeddedPresentation .presentationMode .playbackDock{
+    bottom:4px;
+    width:min(97%,920px);
+    gap:3px;
+    padding:2px 4px;
+    border-radius:10px;
+    background:rgba(4,14,18,.78);
+  }
+
+  body.embeddedPresentation .presentationMode .timeReadout{
+    min-width:52px;
+    flex-basis:52px;
+  }
+
+  body.embeddedPresentation .presentationMode .timeReadout strong{
+    font-size:.72rem;
+  }
+
+  body.embeddedPresentation .presentationMode .timeReadout span{
+    font-size:.52rem;
+  }
+
+  body.embeddedPresentation .presentationMode .speedSelect{
+    min-height:26px;
+    height:26px;
+    width:49px;
+    flex-basis:49px;
+    padding:2px 4px;
+    font-size:.56rem;
+  }
+}

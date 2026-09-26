@@ -1810,3 +1810,116 @@ body.embeddedPresentation .presentationMode .pitchSvg{
   }
   .cloudLocalBackup>div{grid-column:1/-1}
 }
+
+
+/* 2026-09-26 landscape phone presentation: maximize the pitch */
+@media (orientation: landscape) and (max-height: 560px) and (pointer: coarse) {
+  body.embeddedPresentation{
+    overflow:hidden;
+  }
+
+  body.embeddedPresentation .studioShell.presentationMode{
+    height:100dvh;
+    min-height:100dvh;
+    padding:2px;
+    overflow:hidden;
+  }
+
+  body.embeddedPresentation .presentationMode .studioGrid,
+  body.embeddedPresentation .presentationMode .workspaceColumn{
+    height:100%;
+    min-height:0;
+    gap:0;
+  }
+
+  body.embeddedPresentation .presentationMode .pitchCard{
+    position:relative;
+    height:100%;
+    min-height:0;
+    padding:2px;
+    border-radius:10px;
+    overflow:hidden;
+  }
+
+  body.embeddedPresentation .presentationMode .presentationTopbar{
+    position:absolute;
+    z-index:30;
+    top:7px;
+    left:7px;
+    right:7px;
+    padding:0;
+    pointer-events:none;
+  }
+
+  body.embeddedPresentation .presentationMode .presentationTopbar > div:first-child{
+    display:none;
+  }
+
+  body.embeddedPresentation .presentationMode .presentationTopbarActions{
+    width:auto;
+    margin-left:auto;
+    pointer-events:auto;
+  }
+
+  body.embeddedPresentation .presentationMode .presentationTopbarActions button{
+    flex:0 0 auto;
+  }
+
+  body.embeddedPresentation .presentationMode .returnToTrainingButton{
+    min-height:34px;
+    padding:6px 11px;
+    border-radius:10px;
+    background:rgba(5,15,19,.86);
+    border-color:rgba(255,255,255,.18);
+    box-shadow:0 5px 18px rgba(0,0,0,.35);
+    backdrop-filter:blur(10px);
+    font-size:.68rem;
+  }
+
+  body.embeddedPresentation .presentationMode .pitchWrap{
+    width:100%;
+    height:100%;
+    min-height:0;
+    border-radius:9px;
+  }
+
+  body.embeddedPresentation .presentationMode .pitchSvg{
+    width:100%;
+    height:100%;
+    max-height:none;
+    aspect-ratio:auto;
+  }
+
+  body.embeddedPresentation .presentationMode .playbackDock{
+    position:absolute;
+    z-index:28;
+    left:50%;
+    bottom:7px;
+    transform:translateX(-50%);
+    width:min(96%,920px);
+    padding:4px 6px;
+    border:1px solid rgba(255,255,255,.12);
+    border-radius:12px;
+    background:rgba(4,14,18,.86);
+    box-shadow:0 7px 24px rgba(0,0,0,.38);
+    backdrop-filter:blur(10px);
+  }
+
+  body.embeddedPresentation .presentationMode .lineVisibilityControls{
+    display:none;
+  }
+
+  body.embeddedPresentation .presentationMode .speedSelect{
+    min-height:28px;
+    height:28px;
+  }
+
+  body.embeddedPresentation .presentationMode .timeReadout{
+    min-width:56px;
+    flex-basis:56px;
+  }
+
+  body.embeddedPresentation .presentationMode .scrubber{
+    min-width:100px;
+  }
+}

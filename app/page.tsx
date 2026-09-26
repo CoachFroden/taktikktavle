@@ -24,7 +24,7 @@ type ObjectType =
   | "circleShape"
   | "semicircle"
   | "snapPoint";
-type PitchType = "11er" | "9er" | "7er" | "5er";
+type PitchType = "11er" | "9er" | "7er" | "5er" | "training50x64";
 type PitchView = "full" | "half" | "third" | "box";
 type LineAnimationMode = "off" | "pass" | "run" | "rotation";
 type Tool =
@@ -102,6 +102,12 @@ type Scene = {
   lines: BoardLine[];
 };
 
+type TrainingPitchSettings = {
+  leftInsetM: number;
+  rightInsetM: number;
+  linked: boolean;
+};
+
 type PublishedPresentation = {
   version: 1;
   title: string;
@@ -109,6 +115,7 @@ type PublishedPresentation = {
   pitchView: PitchView;
   scenes: Scene[];
   sourceUrl: string;
+  trainingPitch?: TrainingPitchSettings;
 };
 
 type CloudUser = {
@@ -124,6 +131,7 @@ type CloudBoard = {
   pitch: PitchType;
   pitchView: PitchView;
   scenes: Scene[];
+  trainingPitch?: TrainingPitchSettings;
   createdAt?: unknown;
   updatedAt?: unknown;
 };
@@ -184,6 +192,7 @@ const pitchConfig: Record<
   "9er": { penaltyDepth: 145, penaltyHeight: 285, goalDepth: 58, goalHeight: 150, centerRadius: 80 },
   "7er": { penaltyDepth: 125, penaltyHeight: 260, goalDepth: 52, goalHeight: 140, centerRadius: 72 },
   "5er": { penaltyDepth: 105, penaltyHeight: 230, goalDepth: 46, goalHeight: 126, centerRadius: 62 },
+  training50x64: { penaltyDepth: 0, penaltyHeight: 0, goalDepth: 18, goalHeight: 68, centerRadius: 0 },
 };
 
 const pitchViews: Record<PitchView, { label: string; x: number; y: number; width: number; height: number }> = {
@@ -496,6 +505,8 @@ export default function Home() {
   const [title, setTitle] = useState("Ny taktikk");
   const [pitch, setPitch] = useState<PitchType>("11er");
   const [pitchView, setPitchView] = useState<PitchView>("full");
+  const [trainingPitch, setTrainingPitch] = useState<TrainingPitchSettings>({ leftInsetM: 0, rightInsetM: 0, linked: true });
+  const [trainingGoalDragging, setTrainingGoalDragging] = useState<"left" | "right" | null>(null);
   const [tool, setTool] = useState<Tool>("select");
   const [scenes, setScenes] = useState<Scene[]>([createEmptyScene()]);
   const [sceneIndex, setSceneIndex] = useState(0);
@@ -603,13 +614,13 @@ export default function Home() {
     if (embeddedPresentation) return;
     const timer = window.setTimeout(() => {
       try {
-        localStorage.setItem("taktikktavle-autosave-v2", JSON.stringify({ version: 2, title, pitch, pitchView, scenes }));
+        localStorage.setItem("taktikktavle-autosave-v2", JSON.stringify({ version: 2, title, pitch, pitchView, scenes, trainingPitch }));
       } catch {
         // Autosave has its own key and never overwrites a manual local save.
       }
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [title, pitch, pitchView, scenes, embeddedPresentation]);
+  }, [title, pitch, pitchView, scenes, trainingPitch, embeddedPresentation]);
 
   useEffect(() => {
     if (!cloudUser || !pendingCloudSave) return;
@@ -648,6 +659,7 @@ export default function Home() {
       setTitle(imported.title || "Treningsøvelse");
       setPitch(imported.pitch);
       setPitchView(imported.pitchView);
+      setTrainingPitch(imported.trainingPitch ?? { leftInsetM: 0, rightInsetM: 0, linked: true });
       setScenes(restoredScenes);
       setSceneIndex(0);
       setSelectedId(null);

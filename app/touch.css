@@ -390,3 +390,18 @@
 .touchMode .presentationMode .lineVisibilityControls{
   min-height:22px;
 }
+
+
+/* 2026-09-26 keep landscape touch playback on one row */
+@media (orientation: landscape) and (max-height: 560px) and (pointer: coarse) {
+  .touchMode .presentationMode .lineVisibilityControls{
+    min-height:24px;
+  }
+
+  .touchMode .presentationMode .lineVisibilityControls .miniButton{
+    min-width:0;
+    min-height:20px;
+    padding:1px 4px;
+    font-size:.46rem;
+  }
+}

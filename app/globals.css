@@ -1928,11 +1928,17 @@ body.embeddedPresentation .presentationMode .pitchSvg{
 /* 2026-09-26 final landscape presentation tightening */
 @media (orientation: landscape) and (max-height: 560px) and (pointer: coarse) {
   body.embeddedPresentation .presentationMode .pitchCard{
+    display:grid;
+    grid-template-rows:minmax(0,1fr) 34px;
+    gap:2px;
     padding:0;
     border-radius:7px;
   }
 
   body.embeddedPresentation .presentationMode .pitchWrap{
+    width:100%;
+    height:auto;
+    min-height:0;
     border-radius:6px;
   }
 
@@ -1944,12 +1950,19 @@ body.embeddedPresentation .presentationMode .pitchSvg{
   }
 
   body.embeddedPresentation .presentationMode .playbackDock{
-    bottom:4px;
-    width:min(97%,920px);
+    position:static;
+    left:auto;
+    bottom:auto;
+    transform:none;
+    width:100%;
+    height:34px;
+    margin:0;
     gap:3px;
-    padding:2px 4px;
-    border-radius:10px;
-    background:rgba(4,14,18,.78);
+    padding:1px 4px;
+    border-radius:8px;
+    background:rgba(4,14,18,.96);
+    box-shadow:none;
+    backdrop-filter:none;
   }
 
   body.embeddedPresentation .presentationMode .timeReadout{

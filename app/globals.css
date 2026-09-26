@@ -2026,40 +2026,58 @@ body.embeddedPresentation .presentationMode .pitchSvg{
 
 @media (orientation: landscape) and (max-height: 560px) and (pointer: coarse) {
   body.embeddedPresentation .presentationMode .pitchCard{
-    grid-template-rows:minmax(0,1fr) 58px;
+    grid-template-rows:minmax(0,1fr) 34px;
   }
 
   body.embeddedPresentation .presentationMode .playbackDock{
-    height:58px;
-    flex-wrap:wrap;
+    height:34px;
+    flex-wrap:nowrap;
     align-content:center;
+    justify-content:center;
     overflow:hidden;
+    gap:3px;
   }
 
   body.embeddedPresentation .presentationMode .scrubber{
     order:0;
-    flex:1 1 100px;
-    flex-basis:auto;
+    flex:1 1 90px;
     width:auto;
-    min-width:80px;
+    min-width:70px;
   }
 
   body.embeddedPresentation .presentationMode .lineVisibilityControls{
     display:flex!important;
-    order:10;
-    flex:0 0 100%;
-    width:100%;
-    min-height:22px;
+    order:0;
+    flex:0 0 auto;
+    width:auto;
+    min-height:24px;
     padding:1px 2px;
     justify-content:center;
-    gap:2px;
+    gap:1px;
     border-radius:7px;
+    flex-wrap:nowrap!important;
   }
 
   body.embeddedPresentation .presentationMode .lineVisibilityControls .miniButton{
     min-height:20px;
-    padding:1px 6px;
+    min-width:0;
+    padding:1px 4px;
     border-radius:6px;
-    font-size:.52rem;
+    font-size:.46rem;
+  }
+
+  body.embeddedPresentation .presentationMode .typeColorDot{
+    width:6px;
+    height:6px;
+  }
+
+  body.embeddedPresentation .presentationMode .speedSelect{
+    width:46px;
+    flex-basis:46px;
+  }
+
+  body.embeddedPresentation .presentationMode .timeReadout{
+    min-width:48px;
+    flex-basis:48px;
   }
 }

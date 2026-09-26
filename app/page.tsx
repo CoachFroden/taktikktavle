@@ -602,9 +602,9 @@ export default function Home() {
     if (embeddedPresentation) return;
     const timer = window.setTimeout(() => {
       try {
-        localStorage.setItem("taktikktavle-v2", JSON.stringify({ version: 2, title, pitch, pitchView, scenes }));
+        localStorage.setItem("taktikktavle-autosave-v2", JSON.stringify({ version: 2, title, pitch, pitchView, scenes }));
       } catch {
-        // Local autosave is only a fallback; cloud save can still work.
+        // Autosave has its own key and never overwrites a manual local save.
       }
     }, 500);
     return () => window.clearTimeout(timer);
@@ -2444,6 +2444,22 @@ export default function Home() {
     window.location.href = "/";
   }
 
+  function recoverEmbeddedPresentationAsBoard() {
+    setPresentationMode(false);
+    setEmbeddedPresentation(false);
+    setStandaloneEmbeddedPresentation(false);
+    setActiveCloudBoardId(null);
+    setSelectedId(null);
+    setSelectedLineId(null);
+    setTimingLinkDraft(null);
+    setHistoryPast([]);
+    setHistoryFuture([]);
+    setPlayhead(0);
+    document.body.classList.remove("embeddedPresentation");
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    setStatus("Presentasjonen er gjenopprettet som redigerbar taktikk. Lagre den i Mine taktikker.");
+  }
+
   function addPresentationToTraining() {
     try {
       const sourceUrl = window.location.origin + window.location.pathname;
@@ -2686,6 +2702,8 @@ export default function Home() {
 
   function saveBoardLocal() {
     try {
+      const existing = localStorage.getItem("taktikktavle-v2");
+      if (existing) localStorage.setItem("taktikktavle-v2-backup", existing);
       localStorage.setItem("taktikktavle-v2", JSON.stringify({ version: 2, title, pitch, pitchView, scenes }));
       setStatus("Lokal sikkerhetskopi er lagret.");
       setCloudMessage("Lokal sikkerhetskopi lagret.");
@@ -2696,7 +2714,7 @@ export default function Home() {
 
   function loadBoard() {
     try {
-      const v2 = localStorage.getItem("taktikktavle-v2");
+      const v2 = localStorage.getItem("taktikktavle-v2") || localStorage.getItem("taktikktavle-autosave-v2");
       if (v2) {
         const parsed = JSON.parse(v2) as { title?: string; pitch?: PitchType; pitchView?: PitchView; scenes?: Scene[] };
         if (parsed.title) setTitle(parsed.title);
@@ -3174,6 +3192,7 @@ export default function Home() {
                   </div>
                 ) : standaloneEmbeddedPresentation ? (
                   <div className="presentationTopbarActions">
+                    <button className="primaryButton recoverPresentationButton" type="button" onClick={recoverEmbeddedPresentationAsBoard}>↺ Gjenopprett som taktikk</button>
                     <button className="ghostButton returnToTrainingButton" type="button" onClick={leaveEmbeddedPresentation}>← Tilbake til trening</button>
                   </div>
                 ) : null}

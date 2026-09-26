@@ -2894,6 +2894,7 @@ export default function Home() {
             <button className="iconButton" type="button" onClick={undo} disabled={historyPast.length === 0} title="Angre (Ctrl/Cmd+Z)">↶</button>
             <button className="iconButton" type="button" onClick={redo} disabled={historyFuture.length === 0} title="Gjør om">↷</button>
             <span className="headerDivider" />
+            <button className="ghostButton" type="button" onClick={loadBoard}>📂 Åpne lokal</button>
             <button className="ghostButton cloudLibraryButton" type="button" onClick={openCloudLibrary}>☁ Mine taktikker</button>
             <button className="ghostButton" type="button" onClick={exportPng}>Eksporter PNG</button>
             <button className="ghostButton" type="button" onClick={() => window.print()}>⌁ Skriv ut</button>

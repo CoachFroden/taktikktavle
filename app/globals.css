@@ -2141,3 +2141,97 @@ body.embeddedPresentation .presentationMode .scrubberWrap{
 body.embeddedPresentation .presentationMode .scrubberTimeBubble{
   z-index:50;
 }
+
+
+/* 2026-09-26 adjustable 50x64 training pitch */
+.trainingPitchToolbar{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  padding-left:2px;
+}
+.trainingPitchSize{
+  min-width:68px;
+  padding:6px 8px;
+  border:1px solid rgba(112,240,166,.22);
+  border-radius:9px;
+  background:rgba(112,240,166,.06);
+  color:#c7f8da;
+  font-size:.66rem;
+  font-weight:900;
+  text-align:center;
+  white-space:nowrap;
+}
+.trainingLinkButton.active{
+  border-color:rgba(112,240,166,.38);
+  background:rgba(112,240,166,.10);
+  color:#d9fbe6;
+}
+.trainingGoalHandle{
+  cursor:ew-resize;
+  touch-action:none;
+  filter:drop-shadow(0 2px 4px rgba(0,0,0,.5));
+}
+.trainingGoalHandle>circle:first-child{
+  fill:transparent;
+}
+.trainingGoalHandle>circle:nth-child(2){
+  fill:#f7dd72;
+  stroke:#07120c;
+  stroke-width:1.8;
+  vector-effect:non-scaling-stroke;
+}
+.trainingGoalHandle path{
+  fill:none;
+  stroke:#07120c;
+  stroke-width:1.5;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  vector-effect:non-scaling-stroke;
+  pointer-events:none;
+}
+.trainingPitchMeasure rect{
+  fill:rgba(4,17,12,.78);
+  stroke:rgba(255,255,255,.16);
+  stroke-width:1;
+}
+.trainingPitchMeasure text{
+  fill:#eaf8ef;
+  font-size:14px;
+  font-weight:900;
+}
+.trainingGoalMeter rect{
+  fill:#f7dd72;
+  stroke:#07120c;
+  stroke-width:1.5;
+}
+.trainingGoalMeter text{
+  fill:#07120c;
+  font-size:12px;
+  font-weight:950;
+}
+.trainingPitchMarkings{
+  vector-effect:non-scaling-stroke;
+}
+
+@media(max-width:900px){
+  .trainingPitchToolbar{
+    width:100%;
+    flex-wrap:wrap;
+  }
+}
+@media(max-width:620px){
+  .trainingPitchToolbar{
+    gap:4px;
+  }
+  .trainingPitchSize{
+    min-width:62px;
+    padding:5px 6px;
+    font-size:.60rem;
+  }
+  .trainingPitchToolbar .miniButton{
+    min-height:30px;
+    padding:4px 7px;
+    font-size:.60rem;
+  }
+}

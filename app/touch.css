@@ -378,3 +378,15 @@
     height:18px;
   }
 }
+
+
+/* 2026-09-26 compact line filters in touch presentations */
+.touchMode .presentationMode .lineVisibilityControls .miniButton{
+  min-width:0;
+  min-height:20px;
+  padding:1px 6px;
+  font-size:.52rem;
+}
+.touchMode .presentationMode .lineVisibilityControls{
+  min-height:22px;
+}

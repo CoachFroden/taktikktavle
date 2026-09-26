@@ -85,6 +85,7 @@ type BoardLine = {
   timingDuration?: number;
   endSnapId?: string;
   startAfterLineId?: string;
+  startOnPassLineId?: string;
   hidden?: boolean;
   lineShape?: "straight" | "free";
   controlPoints?: Point[];
@@ -699,6 +700,37 @@ export default function Home() {
       : null,
     [lines, selectedLine],
   );
+  const animatedPassOptions = useMemo(
+    () => lines
+      .filter((line) =>
+        line.animationKind === "pass" &&
+        line.actorId &&
+        line.timingStart !== undefined &&
+        line.timingDuration !== undefined
+      )
+      .sort((a, b) => {
+        const timeDifference = (a.timingStart ?? 0) - (b.timingStart ?? 0);
+        if (Math.abs(timeDifference) > 0.001) return timeDifference;
+        return (a.sequenceOrder ?? 0) - (b.sequenceOrder ?? 0);
+      }),
+    [lines],
+  );
+  const selectedMovementSequenceFirstLine = useMemo(() => {
+    if (
+      !selectedLine?.sequenceId ||
+      !selectedLine.actorId ||
+      (selectedLine.animationKind !== "run" && selectedLine.animationKind !== "rotation")
+    ) return null;
+
+    return lines
+      .filter((line) =>
+        line.sequenceId === selectedLine.sequenceId &&
+        line.actorId === selectedLine.actorId &&
+        line.animationKind === selectedLine.animationKind
+      )
+      .sort((a, b) => (a.sequenceOrder ?? 0) - (b.sequenceOrder ?? 0))[0] ?? null;
+  }, [lines, selectedLine]);
+  const selectedMovementStartPassId = selectedMovementSequenceFirstLine?.startOnPassLineId ?? "";
   const lastAnimatedLine = useMemo(
     () => [...lines].reverse().find((line) => line.sequenceId && line.animationKind && line.actorId) ?? null,
     [lines],
@@ -1224,21 +1256,32 @@ export default function Home() {
           }
         }
 
-        // When a movement begins where a pass is struck, that pass is the
-        // natural start signal. This keeps "pass + run" simultaneous.
-        const firstDeparture = departuresAt(first.start, cursor)[0];
-        if (firstDeparture) {
-          const incomingAtSamePoint = passLines
-            .filter((passLine) =>
-              pointDistance(passLine.end, first.start) <= 18 &&
-              Math.abs(passArrival(passLine) - firstDeparture.time) <= 0.04
-            )
-            .sort((a, b) => passArrival(a) - passArrival(b))[0];
+        const explicitStartPass = first.startOnPassLineId
+          ? passLines.find((passLine) => passLine.id === first.startOnPassLineId)
+          : undefined;
 
-          // At a one-touch receive point, the incoming arrival and outgoing
-          // departure are the same event.
-          if (incomingAtSamePoint || firstDeparture.time <= 0.04 || cursor > 0) {
-            cursor = Math.max(cursor, firstDeparture.time);
+        if (explicitStartPass?.timingStart !== undefined) {
+          // Manual start trigger: the selected pass is authoritative. The
+          // player remains still until that exact pass is struck.
+          cursor = Math.max(cursor, explicitStartPass.timingStart);
+        } else {
+          // Auto mode: when a movement begins where a pass is struck, that
+          // pass is the natural start signal. This keeps "pass + run"
+          // simultaneous without manual setup.
+          const firstDeparture = departuresAt(first.start, cursor)[0];
+          if (firstDeparture) {
+            const incomingAtSamePoint = passLines
+              .filter((passLine) =>
+                pointDistance(passLine.end, first.start) <= 18 &&
+                Math.abs(passArrival(passLine) - firstDeparture.time) <= 0.04
+              )
+              .sort((a, b) => passArrival(a) - passArrival(b))[0];
+
+            // At a one-touch receive point, the incoming arrival and outgoing
+            // departure are the same event.
+            if (incomingAtSamePoint || firstDeparture.time <= 0.04 || cursor > 0) {
+              cursor = Math.max(cursor, firstDeparture.time);
+            }
           }
         }
 
@@ -2377,6 +2420,41 @@ export default function Home() {
     };
     event.currentTarget.setPointerCapture(event.pointerId);
     setStatus(pointIndex === linePoints(line).length - 1 ? "Flytter linjens endepunkt." : "Flytter linjepunkt.");
+  }
+
+  function setSelectedMovementStartPass(passLineId: string) {
+    if (
+      !selectedLine?.sequenceId ||
+      !selectedLine.actorId ||
+      (selectedLine.animationKind !== "run" && selectedLine.animationKind !== "rotation")
+    ) return;
+
+    const sequenceId = selectedLine.sequenceId;
+    const actorId = selectedLine.actorId;
+    const animationKind = selectedLine.animationKind;
+    const nextPassLineId = passLineId || undefined;
+
+    mutateCurrentScene((scene) => {
+      const sequenceLines = scene.lines.filter((line) =>
+        line.sequenceId === sequenceId &&
+        line.actorId === actorId &&
+        line.animationKind === animationKind
+      );
+
+      for (const line of sequenceLines) {
+        line.startOnPassLineId = nextPassLineId;
+      }
+
+      recalculateHiddenLineTiming(scene);
+    });
+
+    setPlayhead(0);
+    const passIndex = animatedPassOptions.findIndex((line) => line.id === nextPassLineId);
+    setStatus(
+      nextPassLineId
+        ? `Løpssekvensen starter når pasning ${passIndex >= 0 ? passIndex + 1 : ""} slås.`
+        : "Løpssekvensen bruker automatisk startsignal igjen.",
+    );
   }
 
   function beginTimingGate(line: BoardLine) {
@@ -4151,6 +4229,24 @@ export default function Home() {
                 {(selectedLine.animationKind === "run" || selectedLine.animationKind === "rotation") && (
                   <div className="inspectorGroup timingGateInspector">
                     <div className="inspectorGroupTitle">Timing i bevegelsen</div>
+                    <label className="fieldLabel">
+                      Start på pasning
+                      <select
+                        className="darkInput"
+                        value={selectedMovementStartPassId}
+                        onChange={(event) => setSelectedMovementStartPass(event.target.value)}
+                      >
+                        <option value="">Auto</option>
+                        {animatedPassOptions.map((passLine, index) => (
+                          <option key={passLine.id} value={passLine.id}>
+                            Pasning {index + 1}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <p className="inspectorHelp">
+                      Velg hvilken pasning som skal utløse hele denne spillerens løpssekvens. Spilleren står i ro fram til pasningen slås; deretter tilpasses løpsfarten til SYNK og mottak.
+                    </p>
                     {selectedLine.timingGate ? (
                       <>
                         <div className="timingGateStatus">

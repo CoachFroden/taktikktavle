@@ -1138,6 +1138,24 @@ export default function Home() {
     const naturalDuration = (line: BoardLine) =>
       lineAnimationDuration(line.animationKind as Exclude<LineAnimationMode, "off">, linePoints(line));
 
+    const sameArrivalPoint = (first: BoardLine, second: BoardLine) => {
+      if (first.endSnapId && second.endSnapId && first.endSnapId === second.endSnapId) return true;
+      return pointDistance(first.end, second.end) <= 18;
+    };
+
+    const passArrivesAtMovementStart = (
+      passLine: BoardLine,
+      movementLine: BoardLine,
+      previousMovement?: BoardLine,
+    ) => {
+      if (
+        previousMovement?.endSnapId &&
+        passLine.endSnapId &&
+        previousMovement.endSnapId === passLine.endSnapId
+      ) return true;
+      return pointDistance(passLine.end, movementLine.start) <= 18;
+    };
+
     const schedulePasses = (useSyncTargets: boolean) => {
       for (const sequenceId of passSequenceIds) {
         const passLines = sortedSequence(sequenceId);
@@ -1167,15 +1185,22 @@ export default function Home() {
               }
             }
 
+            // A pass may meet any step in a player's movement sequence.
+            // Previously only the final movement step could be an arrival target,
+            // which broke receive -> next run patterns.
             for (const movementId of movementSequenceIds) {
-              const movementLines = sortedSequence(movementId);
-              const last = movementLines[movementLines.length - 1];
-              if (!last || last.timingStart === undefined || last.timingDuration === undefined) continue;
-              if (!line.endSnapId || !last.endSnapId || line.endSnapId !== last.endSnapId) continue;
-              const distance = pointDistance(last.end, line.end);
-              if (distance < bestDistance) {
-                bestDistance = distance;
-                bestArrival = last.timingStart + last.timingDuration;
+              for (const movementLine of sortedSequence(movementId)) {
+                if (
+                  movementLine.timingStart === undefined ||
+                  movementLine.timingDuration === undefined ||
+                  !sameArrivalPoint(line, movementLine)
+                ) continue;
+
+                const distance = pointDistance(movementLine.end, line.end);
+                if (distance < bestDistance) {
+                  bestDistance = distance;
+                  bestArrival = movementLine.timingStart + movementLine.timingDuration;
+                }
               }
             }
 
@@ -1265,15 +1290,34 @@ export default function Home() {
 
         movementLines.forEach((movementLine, index) => {
           const duration = durations[index];
-          movementLine.timingStart = cursor;
+          let start = cursor;
+
+          // From step 2 onward, a player must not leave a receiving point
+          // before the incoming ball has actually arrived there.
+          if (index > 0) {
+            const previousMovement = movementLines[index - 1];
+            const arrivals = passLines
+              .filter((passLine) =>
+                passLine.timingStart !== undefined &&
+                passLine.timingDuration !== undefined &&
+                passArrivesAtMovementStart(passLine, movementLine, previousMovement)
+              )
+              .map((passLine) => (passLine.timingStart ?? 0) + (passLine.timingDuration ?? 0))
+              .filter((arrival) => arrival >= cursor - 0.03)
+              .sort((a, b) => a - b);
+
+            if (arrivals.length > 0) start = Math.max(start, arrivals[0]);
+          }
+
+          movementLine.timingStart = start;
           movementLine.timingDuration = duration;
-          cursor += duration;
+          cursor = start + duration;
         });
       }
     };
 
     schedulePasses(false);
-    for (let iteration = 0; iteration < 4; iteration += 1) {
+    for (let iteration = 0; iteration < 5; iteration += 1) {
       scheduleMovements();
       schedulePasses(true);
     }
@@ -1290,16 +1334,22 @@ export default function Home() {
         let targetArrival = 0;
         let bestDistance = Number.POSITIVE_INFINITY;
 
+        // Arrival correction also applies to an intermediate movement step,
+        // not only the final step in that player's whole sequence.
         for (const movementId of movementSequenceIds) {
-          const movementLines = sortedSequence(movementId);
-          const last = movementLines[movementLines.length - 1];
-          if (!last || last.timingStart === undefined || last.timingDuration === undefined) continue;
-          if (!passLine.endSnapId || !last.endSnapId || passLine.endSnapId !== last.endSnapId) continue;
-          const distance = pointDistance(last.end, passLine.end);
-          if (distance < bestDistance) {
-            targetLine = last;
-            targetArrival = last.timingStart + last.timingDuration;
-            bestDistance = distance;
+          for (const movementLine of sortedSequence(movementId)) {
+            if (
+              movementLine.timingStart === undefined ||
+              movementLine.timingDuration === undefined ||
+              !sameArrivalPoint(passLine, movementLine)
+            ) continue;
+
+            const distance = pointDistance(movementLine.end, passLine.end);
+            if (distance < bestDistance) {
+              targetLine = movementLine;
+              targetArrival = movementLine.timingStart + movementLine.timingDuration;
+              bestDistance = distance;
+            }
           }
         }
 
@@ -1315,6 +1365,9 @@ export default function Home() {
         }
       }
     }
+
+    // One final movement pass propagates any receive delay to the following run.
+    scheduleMovements();
 
     for (const object of scene.objects) {
       const actorLines = animatedLines
@@ -1351,7 +1404,6 @@ export default function Home() {
       object.motionDuration = Math.max(0.15, end - start);
     }
   }
-
   function chooseTool(nextTool: Tool) {
     stopAnimation(false);
     cancelFreehand();

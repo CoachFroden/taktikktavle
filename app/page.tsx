@@ -656,7 +656,7 @@ export default function Home() {
       setPresentationMode(true);
       setEmbeddedPresentation(true);
       setPresentationReturnUrl(returnUrl);
-      setStandaloneEmbeddedPresentation(window.frameElement === null);
+      setStandaloneEmbeddedPresentation(window.self === window.top);
       setLineTypeVisibility({ arrow: true, run: true, rotation: true });
       setStatus("Presentasjon lastet.");
       document.body.classList.add("embeddedPresentation");

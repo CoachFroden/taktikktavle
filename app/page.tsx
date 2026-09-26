@@ -1156,73 +1156,62 @@ export default function Home() {
       return pointDistance(passLine.end, movementLine.start) <= 18;
     };
 
-    const schedulePasses = (useSyncTargets: boolean) => {
+    // Passes are the master clock. A pass sequence is played continuously:
+    // pass 2 leaves the instant pass 1 arrives, pass 3 leaves the instant
+    // pass 2 arrives, etc. Player speed is adapted to those ball events.
+    const schedulePasses = () => {
       for (const sequenceId of passSequenceIds) {
         const passLines = sortedSequence(sequenceId);
         let cursor = 0;
 
         for (const line of passLines) {
           const duration = naturalDuration(line);
-          let start = cursor;
-
-          if (useSyncTargets) {
-            let bestArrival: number | null = null;
-            let bestDistance = Number.POSITIVE_INFINITY;
-
-            for (const movementId of movementSequenceIds) {
-              const movementLines = sortedSequence(movementId);
-              for (const movementLine of movementLines) {
-                if (
-                  movementLine.timingGate?.passLineId === line.id &&
-                  movementLine.timingStart !== undefined &&
-                  movementLine.timingDuration !== undefined
-                ) {
-                  const gateMoment =
-                    movementLine.timingStart +
-                    movementLine.timingDuration * clamp(movementLine.timingGate.progress, 0.02, 0.98);
-                  start = Math.max(start, gateMoment);
-                }
-              }
-            }
-
-            // A pass may meet any step in a player's movement sequence.
-            // Previously only the final movement step could be an arrival target,
-            // which broke receive -> next run patterns.
-            for (const movementId of movementSequenceIds) {
-              for (const movementLine of sortedSequence(movementId)) {
-                if (
-                  movementLine.timingStart === undefined ||
-                  movementLine.timingDuration === undefined ||
-                  !sameArrivalPoint(line, movementLine)
-                ) continue;
-
-                const distance = pointDistance(movementLine.end, line.end);
-                if (distance < bestDistance) {
-                  bestDistance = distance;
-                  bestArrival = movementLine.timingStart + movementLine.timingDuration;
-                }
-              }
-            }
-
-            if (bestArrival !== null) start = Math.max(start, bestArrival - duration);
-          }
-
-          line.timingStart = start;
+          line.timingStart = cursor;
           line.timingDuration = duration;
-          cursor = start + duration;
+          cursor += duration;
         }
       }
     };
 
     const scheduleMovements = () => {
-      const passLines = passSequenceIds.flatMap((sequenceId) => sortedSequence(sequenceId));
+      const passLines = passSequenceIds
+        .flatMap((sequenceId) => sortedSequence(sequenceId))
+        .filter((line) => line.timingStart !== undefined && line.timingDuration !== undefined)
+        .sort((a, b) => (a.timingStart ?? 0) - (b.timingStart ?? 0));
+
+      const passArrival = (line: BoardLine) =>
+        (line.timingStart ?? 0) + (line.timingDuration ?? 0);
+
+      const arrivalsAt = (movementLine: BoardLine, notBefore: number) =>
+        passLines
+          .filter((passLine) =>
+            sameArrivalPoint(passLine, movementLine) &&
+            passArrival(passLine) >= notBefore - 0.03
+          )
+          .map((passLine) => ({
+            line: passLine,
+            time: passArrival(passLine),
+          }))
+          .sort((a, b) => a.time - b.time);
+
+      const departuresAt = (point: Point, notBefore: number) =>
+        passLines
+          .filter((passLine) =>
+            pointDistance(passLine.start, point) <= 18 &&
+            (passLine.timingStart ?? 0) >= notBefore - 0.03
+          )
+          .map((passLine) => ({
+            line: passLine,
+            time: passLine.timingStart ?? 0,
+          }))
+          .sort((a, b) => a.time - b.time);
 
       for (const sequenceId of movementSequenceIds) {
         const movementLines = sortedSequence(sequenceId);
         if (movementLines.length === 0) continue;
 
         const first = movementLines[0];
-        let earliestStart = 0;
+        let cursor = 0;
 
         if (first.startAfterLineId) {
           const previousMovement = animatedLines.find((line) => line.id === first.startAfterLineId);
@@ -1231,121 +1220,89 @@ export default function Home() {
             previousMovement.timingStart !== undefined &&
             previousMovement.timingDuration !== undefined
           ) {
-            earliestStart = previousMovement.timingStart + previousMovement.timingDuration;
+            cursor = previousMovement.timingStart + previousMovement.timingDuration;
           }
         }
 
-        const durations = movementLines.map((movementLine) => {
-          const gate = movementLine.timingGate;
-          if (!gate) return naturalDuration(movementLine);
-
-          const linkedPass = passLines.find((passLine) => passLine.id === gate.passLineId);
-          const progress = clamp(gate.progress, 0.02, 0.98);
-          if (
-            linkedPass?.timingDuration !== undefined &&
-            movementLine.endSnapId &&
-            linkedPass.endSnapId &&
-            movementLine.endSnapId === linkedPass.endSnapId
-          ) {
-            // One continuous run can satisfy both constraints:
-            // cross the gate when the pass leaves and reach the endpoint with the pass.
-            return Math.max(0.15, linkedPass.timingDuration / Math.max(0.02, 1 - progress));
-          }
-          return naturalDuration(movementLine);
-        });
-
-        const gateIndex = movementLines.findIndex((movementLine) => {
-          const gate = movementLine.timingGate;
-          if (!gate) return false;
-          const linkedPass = passLines.find((passLine) => passLine.id === gate.passLineId);
-          return linkedPass?.timingStart !== undefined;
-        });
-
-        let cursor = earliestStart;
-
-        if (gateIndex >= 0) {
-          const gateLine = movementLines[gateIndex];
-          const gate = gateLine.timingGate as NonNullable<BoardLine["timingGate"]>;
-          const linkedPass = passLines.find((passLine) => passLine.id === gate.passLineId);
-          const passStart = linkedPass?.timingStart ?? 0;
-          const beforeGate = durations
-            .slice(0, gateIndex)
-            .reduce((sum, duration) => sum + duration, 0);
-          const toGate = beforeGate + durations[gateIndex] * clamp(gate.progress, 0.02, 0.98);
-          cursor = Math.max(earliestStart, passStart - toGate);
-        } else {
-          const matchingPasses = passLines
+        // When a movement begins where a pass is struck, that pass is the
+        // natural start signal. This keeps "pass + run" simultaneous.
+        const firstDeparture = departuresAt(first.start, cursor)[0];
+        if (firstDeparture) {
+          const incomingAtSamePoint = passLines
             .filter((passLine) =>
-              passLine.timingStart !== undefined &&
-              pointDistance(passLine.start, first.start) <= 30
+              pointDistance(passLine.end, first.start) <= 18 &&
+              Math.abs(passArrival(passLine) - firstDeparture.time) <= 0.04
             )
-            .sort((a, b) => (a.timingStart ?? 0) - (b.timingStart ?? 0));
+            .sort((a, b) => passArrival(a) - passArrival(b))[0];
 
-          const trigger = matchingPasses.find((passLine) =>
-            (passLine.timingStart ?? 0) >= earliestStart - 0.03
-          ) ?? (earliestStart <= 0.03 ? matchingPasses[0] : undefined);
-
-          cursor = Math.max(earliestStart, trigger?.timingStart ?? earliestStart);
+          // At a one-touch receive point, the incoming arrival and outgoing
+          // departure are the same event.
+          if (incomingAtSamePoint || firstDeparture.time <= 0.04 || cursor > 0) {
+            cursor = Math.max(cursor, firstDeparture.time);
+          }
         }
 
         movementLines.forEach((movementLine, index) => {
-          const duration = durations[index];
           let start = cursor;
+          const natural = naturalDuration(movementLine);
 
-          // A player who has just received a pass must not start the next
-          // movement before the ball has actually arrived. This also works
-          // when the continuation was drawn as a new movement sequence.
-          const previousMovement = index > 0 ? movementLines[index - 1] : undefined;
-          const receiveCandidates = passLines
-            .filter((passLine) =>
-              passLine.timingStart !== undefined &&
-              passLine.timingDuration !== undefined &&
-              pointDistance(passLine.end, movementLine.start) <= 18
-            )
-            .map((passLine) => ({
-              passLine,
-              arrival: (passLine.timingStart ?? 0) + (passLine.timingDuration ?? 0),
-            }))
-            .filter(({ arrival }) => arrival >= cursor - 0.03)
-            .sort((a, b) => a.arrival - b.arrival);
+          // A continuation from a receive point starts exactly when the ball
+          // arrives / the next one-touch pass is struck.
+          if (index > 0) {
+            const departure = departuresAt(movementLine.start, start)[0];
+            if (departure && Math.abs(departure.time - start) <= 0.06) {
+              start = departure.time;
+            }
+          }
 
-          const receive = receiveCandidates.find(({ passLine, arrival }) => {
-            if (
-              previousMovement &&
-              passArrivesAtMovementStart(passLine, movementLine, previousMovement)
-            ) return true;
+          const endArrival = arrivalsAt(movementLine, start + 0.01)[0];
+          const endDeparture = departuresAt(movementLine.end, start + 0.01)[0];
 
-            return animatedLines.some((candidate) => {
-              if (
-                candidate.id === movementLine.id ||
-                candidate.actorId !== movementLine.actorId ||
-                (candidate.animationKind !== "run" && candidate.animationKind !== "rotation") ||
-                candidate.timingStart === undefined ||
-                candidate.timingDuration === undefined ||
-                pointDistance(candidate.end, movementLine.start) > 18
-              ) return false;
+          // Reaching a point where a pass is immediately played is also a hard
+          // event. Prefer the earliest ball event at the movement endpoint.
+          const endpointEvents = [
+            ...(endArrival ? [{ time: endArrival.time, kind: "arrival" as const }] : []),
+            ...(endDeparture ? [{ time: endDeparture.time, kind: "departure" as const }] : []),
+          ].sort((a, b) => a.time - b.time);
+          const endpointTime = endpointEvents[0]?.time;
 
-              const candidateArrival = candidate.timingStart + candidate.timingDuration;
-              return Math.abs(candidateArrival - arrival) <= 0.12;
-            });
-          });
+          const gate = movementLine.timingGate;
+          const linkedPass = gate
+            ? passLines.find((passLine) => passLine.id === gate.passLineId)
+            : undefined;
+          const gateTime = linkedPass?.timingStart;
+          const gateProgress = gate ? clamp(gate.progress, 0.02, 0.98) : undefined;
 
-          if (receive) start = Math.max(start, receive.arrival);
+          let duration = natural;
 
-          // If a pass leaves from the same point where this movement starts,
-          // the player must not leave before that pass is actually struck.
-          // This is especially important for receive -> pass -> next run:
-          // later timing gates may otherwise back-calculate the run too early.
-          const outgoingPass = passLines
-            .filter((passLine) =>
-              passLine.timingStart !== undefined &&
-              pointDistance(passLine.start, movementLine.start) <= 18 &&
-              (passLine.timingStart ?? 0) >= start - 0.03
-            )
-            .sort((a, b) => (a.timingStart ?? 0) - (b.timingStart ?? 0))[0];
+          if (
+            endpointTime !== undefined &&
+            gateTime !== undefined &&
+            gateProgress !== undefined &&
+            endpointTime > gateTime + 0.01
+          ) {
+            // Fit both constraints when possible: cross the timing point when
+            // the linked pass leaves AND hit the endpoint when the ball event
+            // happens. This changes player speed, never pass timing.
+            const fittedDuration = (endpointTime - gateTime) / Math.max(0.02, 1 - gateProgress);
+            const fittedStart = gateTime - fittedDuration * gateProgress;
 
-          if (outgoingPass?.timingStart !== undefined) {
-            start = Math.max(start, outgoingPass.timingStart);
+            if (fittedStart >= start - 0.03) {
+              start = Math.max(start, fittedStart);
+              duration = Math.max(0.15, endpointTime - start);
+            } else {
+              duration = Math.max(0.15, endpointTime - start);
+            }
+          } else if (endpointTime !== undefined) {
+            // The receive/sync point is authoritative. Stretch or compress the
+            // run so the player gets there exactly with the ball.
+            duration = Math.max(0.15, endpointTime - start);
+          } else if (
+            gateTime !== undefined &&
+            gateProgress !== undefined &&
+            gateTime > start + 0.01
+          ) {
+            duration = Math.max(0.15, (gateTime - start) / gateProgress);
           }
 
           movementLine.timingStart = start;
@@ -1355,57 +1312,7 @@ export default function Home() {
       }
     };
 
-    schedulePasses(false);
-    for (let iteration = 0; iteration < 5; iteration += 1) {
-      scheduleMovements();
-      schedulePasses(true);
-    }
-    scheduleMovements();
-    schedulePasses(true);
-    scheduleMovements();
-
-    for (const passSequenceId of passSequenceIds) {
-      for (const passLine of sortedSequence(passSequenceId)) {
-        if (passLine.timingStart === undefined || passLine.timingDuration === undefined) continue;
-        const passArrival = passLine.timingStart + passLine.timingDuration;
-
-        let targetLine: BoardLine | null = null;
-        let targetArrival = 0;
-        let bestDistance = Number.POSITIVE_INFINITY;
-
-        // Arrival correction also applies to an intermediate movement step,
-        // not only the final step in that player's whole sequence.
-        for (const movementId of movementSequenceIds) {
-          for (const movementLine of sortedSequence(movementId)) {
-            if (
-              movementLine.timingStart === undefined ||
-              movementLine.timingDuration === undefined ||
-              !sameArrivalPoint(passLine, movementLine)
-            ) continue;
-
-            const distance = pointDistance(movementLine.end, passLine.end);
-            if (distance < bestDistance) {
-              targetLine = movementLine;
-              targetArrival = movementLine.timingStart + movementLine.timingDuration;
-              bestDistance = distance;
-            }
-          }
-        }
-
-        if (
-          targetLine &&
-          targetLine.timingGate?.passLineId !== passLine.id &&
-          passArrival > targetArrival + 0.01
-        ) {
-          targetLine.timingDuration = Math.max(
-            0.15,
-            (targetLine.timingDuration ?? 0) + (passArrival - targetArrival),
-          );
-        }
-      }
-    }
-
-    // One final movement pass propagates any receive delay to the following run.
+    schedulePasses();
     scheduleMovements();
 
     for (const object of scene.objects) {

@@ -1906,7 +1906,7 @@ body.embeddedPresentation .presentationMode .pitchSvg{
   }
 
   body.embeddedPresentation .presentationMode .lineVisibilityControls{
-    display:none;
+    display:flex;
   }
 
   body.embeddedPresentation .presentationMode .speedSelect{
@@ -1985,5 +1985,81 @@ body.embeddedPresentation .presentationMode .pitchSvg{
     flex-basis:49px;
     padding:2px 4px;
     font-size:.56rem;
+  }
+}
+
+
+/* 2026-09-26 keep line filters visible in compact presentations */
+@media (max-width: 620px) {
+  body.embeddedPresentation .presentationMode .playbackDock{
+    flex-wrap:wrap;
+    overflow:hidden;
+  }
+
+  body.embeddedPresentation .presentationMode .scrubber{
+    order:0;
+    flex:1 1 90px;
+    flex-basis:auto;
+    width:auto;
+    min-width:70px;
+  }
+
+  body.embeddedPresentation .presentationMode .lineVisibilityControls{
+    display:flex!important;
+    order:10;
+    flex:0 0 100%;
+    width:100%;
+    min-height:22px;
+    padding:1px 2px;
+    justify-content:center;
+    gap:2px;
+    border-radius:7px;
+  }
+
+  body.embeddedPresentation .presentationMode .lineVisibilityControls .miniButton{
+    min-height:20px;
+    padding:1px 5px;
+    border-radius:6px;
+    font-size:.52rem;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 560px) and (pointer: coarse) {
+  body.embeddedPresentation .presentationMode .pitchCard{
+    grid-template-rows:minmax(0,1fr) 58px;
+  }
+
+  body.embeddedPresentation .presentationMode .playbackDock{
+    height:58px;
+    flex-wrap:wrap;
+    align-content:center;
+    overflow:hidden;
+  }
+
+  body.embeddedPresentation .presentationMode .scrubber{
+    order:0;
+    flex:1 1 100px;
+    flex-basis:auto;
+    width:auto;
+    min-width:80px;
+  }
+
+  body.embeddedPresentation .presentationMode .lineVisibilityControls{
+    display:flex!important;
+    order:10;
+    flex:0 0 100%;
+    width:100%;
+    min-height:22px;
+    padding:1px 2px;
+    justify-content:center;
+    gap:2px;
+    border-radius:7px;
+  }
+
+  body.embeddedPresentation .presentationMode .lineVisibilityControls .miniButton{
+    min-height:20px;
+    padding:1px 6px;
+    border-radius:6px;
+    font-size:.52rem;
   }
 }

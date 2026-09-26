@@ -345,3 +345,36 @@
 .touchMode .presentationMode input[type="range"]{
   min-height:26px;
 }
+
+
+/* 2026-09-26 tighter controls for landscape phone presentation */
+@media (orientation: landscape) and (max-height: 560px) and (pointer: coarse) {
+  .touchMode .presentationMode .playButton{
+    width:32px;
+    height:32px;
+    min-width:32px;
+    min-height:32px;
+    border-radius:8px;
+    font-size:.72rem;
+  }
+
+  .touchMode .presentationMode .resetButton,
+  .touchMode .presentationMode .loopButton{
+    width:28px;
+    height:28px;
+    min-width:28px;
+    min-height:28px;
+    border-radius:8px;
+    font-size:.64rem;
+  }
+
+  .touchMode .presentationMode .scrubber,
+  .touchMode .presentationMode input[type="range"]{
+    min-height:20px;
+  }
+
+  .touchMode .presentationMode input[type="range"]::-webkit-slider-thumb{
+    width:18px;
+    height:18px;
+  }
+}

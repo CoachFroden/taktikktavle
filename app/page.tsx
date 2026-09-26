@@ -656,7 +656,7 @@ export default function Home() {
       setPresentationMode(true);
       setEmbeddedPresentation(true);
       setPresentationReturnUrl(returnUrl);
-      setStandaloneEmbeddedPresentation(window.self === window.top);
+      setStandaloneEmbeddedPresentation(window.frameElement === null);
       setLineTypeVisibility({ arrow: true, run: true, rotation: true });
       setStatus("Presentasjon lastet.");
       document.body.classList.add("embeddedPresentation");
@@ -3190,12 +3190,16 @@ export default function Home() {
                     <button className="primaryButton addToTrainingButton" type="button" onClick={addPresentationToTraining}>＋ Legg til i trening</button>
                     <button className="ghostButton" type="button" onClick={() => setPresentationMode(false)}>✕ Avslutt presentasjon</button>
                   </div>
-                ) : standaloneEmbeddedPresentation ? (
+                ) : (
                   <div className="presentationTopbarActions">
-                    <button className="primaryButton recoverPresentationButton" type="button" onClick={recoverEmbeddedPresentationAsBoard}>↺ Gjenopprett som taktikk</button>
-                    <button className="ghostButton returnToTrainingButton" type="button" onClick={leaveEmbeddedPresentation}>← Tilbake til trening</button>
+                    {standaloneEmbeddedPresentation && (
+                      <button className="primaryButton recoverPresentationButton" type="button" onClick={recoverEmbeddedPresentationAsBoard}>↺ Gjenopprett som taktikk</button>
+                    )}
+                    {standaloneEmbeddedPresentation && (
+                      <button className="ghostButton returnToTrainingButton" type="button" onClick={leaveEmbeddedPresentation}>← Tilbake til trening</button>
+                    )}
                   </div>
-                ) : null}
+                )}
               </div>
             )}
 

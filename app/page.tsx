@@ -2050,6 +2050,14 @@ export default function Home() {
           setPendingSequenceDirection(direction);
           return;
         }
+        if (loopPlaybackRef.current) {
+          const loopIndex = direction === 1 ? 0 : scenes.length - 1;
+          setSceneIndex(loopIndex);
+          setSelectedId(null);
+          setPendingSequenceDirection(direction);
+          setStatus("Looper hele sekvensen.");
+          return;
+        }
         sequenceRef.current = false;
         setStatus(direction === 1 ? "Hele sekvensen er ferdig." : "Hele sekvensen er spilt baklengs.");
         return;
@@ -2110,6 +2118,14 @@ export default function Home() {
           setPendingSequenceDirection(direction);
           return;
         }
+        if (loopPlaybackRef.current) {
+          const loopIndex = direction === 1 ? 0 : scenes.length - 1;
+          setSceneIndex(loopIndex);
+          setSelectedId(null);
+          setPendingSequenceDirection(direction);
+          setStatus("Looper hele sekvensen.");
+          return;
+        }
         sequenceRef.current = false;
         setStatus(direction === 1 ? "Hele sekvensen er ferdig." : "Hele sekvensen er spilt baklengs.");
       } else {
@@ -2124,7 +2140,7 @@ export default function Home() {
     const next = !loopPlaybackRef.current;
     loopPlaybackRef.current = next;
     setLoopPlayback(next);
-    setStatus(next ? "Loop er på. Scenen starter automatisk på nytt." : "Loop er av.");
+    setStatus(next ? "Loop er på. Ved «spill av alle» starter hele scenesekvensen på nytt." : "Loop er av.");
   }
 
   function toggleForward() {

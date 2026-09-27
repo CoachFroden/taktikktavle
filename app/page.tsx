@@ -2149,9 +2149,16 @@ export default function Home() {
       animationRef.current = null;
       setIsPlaying(false);
       sequenceRef.current = false;
+      setPendingSequenceDirection(null);
       setStatus("Pause.");
       return;
     }
+
+    if (presentationMode && scenes.length > 1) {
+      playSequence(1);
+      return;
+    }
+
     startPlayback(1);
   }
 
@@ -2161,9 +2168,16 @@ export default function Home() {
       animationRef.current = null;
       setIsPlaying(false);
       sequenceRef.current = false;
+      setPendingSequenceDirection(null);
       setStatus("Pause.");
       return;
     }
+
+    if (presentationMode && scenes.length > 1) {
+      playSequence(-1);
+      return;
+    }
+
     startPlayback(-1);
   }
 
@@ -2182,9 +2196,11 @@ export default function Home() {
     if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
     animationRef.current = null;
     sequenceRef.current = false;
+    setPendingSequenceDirection(null);
     setIsPlaying(false);
+    if (presentationMode && scenes.length > 1) setSceneIndex(0);
     setPlayhead(0);
-    setStatus("Tilbake til startposisjonene.");
+    setStatus(presentationMode && scenes.length > 1 ? "Tilbake til starten av presentasjonen." : "Tilbake til startposisjonene.");
   }
 
   function commitEndPositions() {
@@ -3936,12 +3952,12 @@ export default function Home() {
                 className={`loopButton ${loopPlayback ? "active" : ""}`}
                 type="button"
                 onClick={toggleLoopPlayback}
-                title="Spill denne scenen kontinuerlig i loop"
+                title={presentationMode && scenes.length > 1 ? "Spill hele presentasjonen kontinuerlig i loop" : "Spill denne scenen kontinuerlig i loop"}
                 aria-pressed={loopPlayback}
               >
                 ↻ <span>Loop</span>
               </button>
-              <button className={`playButton ${isPlaying && playDirectionRef.current === 1 ? "playing" : ""}`} type="button" onClick={toggleForward} title="Play / pause (mellomrom)">{isPlaying && playDirectionRef.current === 1 ? "❚❚" : "▶"}</button>
+              <button className={`playButton ${isPlaying && playDirectionRef.current === 1 ? "playing" : ""}`} type="button" onClick={toggleForward} title={presentationMode && scenes.length > 1 ? "Spill hele presentasjonen / pause (mellomrom)" : "Play / pause (mellomrom)"}>{isPlaying && playDirectionRef.current === 1 ? "❚❚" : "▶"}</button>
               <div className="scrubberWrap">
                 {scrubbing && (
                   <output

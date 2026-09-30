@@ -86,6 +86,7 @@ type BoardLine = {
   endSnapId?: string;
   startAfterLineId?: string;
   startOnPassLineId?: string;
+  carryBallAfterReceive?: boolean;
   hidden?: boolean;
   lineShape?: "straight" | "free";
   controlPoints?: Point[];
@@ -731,6 +732,7 @@ export default function Home() {
       .sort((a, b) => (a.sequenceOrder ?? 0) - (b.sequenceOrder ?? 0))[0] ?? null;
   }, [lines, selectedLine]);
   const selectedMovementStartPassId = selectedMovementSequenceFirstLine?.startOnPassLineId ?? "";
+  const selectedMovementCarriesBall = selectedMovementSequenceFirstLine?.carryBallAfterReceive !== false;
   const lastAnimatedLine = useMemo(
     () => [...lines].reverse().find((line) => line.sequenceId && line.animationKind && line.actorId) ?? null,
     [lines],
@@ -1094,8 +1096,9 @@ export default function Home() {
 
     if (lineAnimationMode === "pass") {
       if (!actorId) {
-        const existingBall = objects.find((item) => item.type === "ball");
-        actorId = existingBall?.id ?? makeId();
+        // A new pass sequence represents a new ball. Reuse a ball only when
+        // the user explicitly starts the sequence by dragging from that ball.
+        actorId = object?.type === "ball" ? object.id : makeId();
       }
       if (!lineAnimationLastPoint && object) start = { x: object.x, y: object.y };
     } else {
@@ -1770,7 +1773,6 @@ export default function Home() {
 
   function createPass(from: BoardObject, to: BoardObject) {
     mutateCurrentScene((scene) => {
-      const existingBall = scene.objects.find((object) => object.type === "ball");
       const passPatch: Partial<BoardObject> = {
         x: from.x,
         y: from.y,
@@ -1779,7 +1781,7 @@ export default function Home() {
         motionStart: 0,
         motionDuration: 1.1,
       };
-      if (existingBall) Object.assign(existingBall, passPatch);
+      if (from.type === "ball") Object.assign(from, passPatch);
       else scene.objects.push({ id: makeId(), type: "ball", x: from.x, y: from.y, ...passPatch });
       scene.lines.push({ id: makeId(), type: "arrow", start: { x: from.x, y: from.y }, end: { x: to.x, y: to.y } });
     });
@@ -1915,11 +1917,32 @@ export default function Home() {
 
     if (nextPassStart !== undefined && time >= nextPassStart - 0.001) return null;
 
+    const noCarryAtReceive = lines.some((line) => {
+      if (
+        !line.actorId ||
+        line.actorId === ball.id ||
+        (line.animationKind !== "run" && line.animationKind !== "rotation") ||
+        line.carryBallAfterReceive !== false ||
+        line.timingStart === undefined ||
+        line.timingDuration === undefined ||
+        pointDistance(line.end, receivedPass.end) > 18
+      ) return false;
+
+      const arrival = line.timingStart + line.timingDuration;
+      return Math.abs(arrival - receivedAt) <= 0.15;
+    });
+
+    // An explicit "continue without ball" on the receiving run overrides the
+    // automatic carrier inference. The ball then stays at the receive point
+    // until its next pass animation begins.
+    if (noCarryAtReceive) return null;
+
     const movementCandidates = lines
       .filter((line) =>
         line.actorId &&
         line.actorId !== ball.id &&
         (line.animationKind === "run" || line.animationKind === "rotation") &&
+        line.carryBallAfterReceive !== false &&
         line.timingStart !== undefined &&
         line.timingDuration !== undefined &&
         pointDistance(line.end, receivedPass.end) <= 18
@@ -2486,6 +2509,38 @@ export default function Home() {
       nextPassLineId
         ? `Løpssekvensen starter når pasning ${passIndex >= 0 ? passIndex + 1 : ""} slås.`
         : "Løpssekvensen bruker automatisk startsignal igjen.",
+    );
+  }
+
+  function setSelectedMovementCarryBall(carryBall: boolean) {
+    if (
+      !selectedLine?.sequenceId ||
+      !selectedLine.actorId ||
+      (selectedLine.animationKind !== "run" && selectedLine.animationKind !== "rotation")
+    ) return;
+
+    const sequenceId = selectedLine.sequenceId;
+    const actorId = selectedLine.actorId;
+    const animationKind = selectedLine.animationKind;
+
+    mutateCurrentScene((scene) => {
+      for (const line of scene.lines) {
+        if (
+          line.sequenceId === sequenceId &&
+          line.actorId === actorId &&
+          line.animationKind === animationKind
+        ) {
+          line.carryBallAfterReceive = carryBall;
+        }
+      }
+      recalculateHiddenLineTiming(scene);
+    });
+
+    setPlayhead(0);
+    setStatus(
+      carryBall
+        ? "Spilleren tar med ballen etter mottak."
+        : "Spilleren fortsetter løpet uten ball etter mottak.",
     );
   }
 
@@ -4278,6 +4333,20 @@ export default function Home() {
                     </label>
                     <p className="inspectorHelp">
                       Velg hvilken pasning som skal utløse hele denne spillerens løpssekvens. Spilleren står i ro fram til pasningen slås; deretter tilpasses løpsfarten til SYNK og mottak.
+                    </p>
+                    <label className="fieldLabel">
+                      Etter mottak
+                      <select
+                        className="darkInput"
+                        value={selectedMovementCarriesBall ? "carry" : "leave"}
+                        onChange={(event) => setSelectedMovementCarryBall(event.target.value === "carry")}
+                      >
+                        <option value="carry">Ta med ball</option>
+                        <option value="leave">Fortsett uten ball</option>
+                      </select>
+                    </label>
+                    <p className="inspectorHelp">
+                      «Fortsett uten ball» lar spilleren løpe videre etter SYNK/mottak, mens ballen blir i mottakspunktet til en eventuell ny pasning starter.
                     </p>
                     {selectedLine.timingGate ? (
                       <>

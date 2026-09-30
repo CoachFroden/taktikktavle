@@ -1450,9 +1450,14 @@ export default function Home() {
     cancelFreehand();
     setTool(nextTool);
     setDrawing(null);
+
+    // Choosing a tool is an explicit exit from the temporary SYNK-linking
+    // workflow. In particular, clicking "Velg" must restore normal
+    // selection/editing instead of leaving line clicks captured by SYNK mode.
+    setTimingLinkDraft(null);
+
     if (nextTool !== "select") {
       setSelectedLineId(null);
-      setTimingLinkDraft(null);
     }
     const activeAnimationTool = animationToolForMode(lineAnimationMode);
     if (lineAnimationMode !== "off" && nextTool !== activeAnimationTool) {

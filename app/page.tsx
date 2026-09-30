@@ -744,6 +744,10 @@ export default function Home() {
   }, [lines, selectedLine]);
   const selectedMovementStartPassId = selectedMovementSequenceFirstLine?.startOnPassLineId ?? "";
   const selectedMovementCarriesBall = selectedMovementSequenceFirstLine?.carryBallAfterReceive !== false;
+  const selectedSyncMode: "off" | "pass" | "run" =
+    !selectedLine?.timingGate || selectedLine.timingGate.enabled === false
+      ? "off"
+      : (selectedLine.timingGate.targetType ?? "pass");
   const lastAnimatedLine = useMemo(
     () => [...lines].reverse().find((line) => line.sequenceId && line.animationKind && line.actorId) ?? null,
     [lines],
@@ -2612,6 +2616,24 @@ export default function Home() {
         ? "Klikk på løpslinjen der spilleren skal være ved pasningshendelsen."
         : "Klikk på løpslinjen der denne spilleren skal være samtidig med den andre spilleren.",
     );
+  }
+
+  function setSelectedSyncMode(mode: "off" | "pass" | "run") {
+    if (!selectedLine) return;
+
+    if (mode === "off") {
+      if (selectedLine.timingGate) setTimingGateEnabled(false);
+      else setStatus("Ingen SYNK er aktiv.");
+      return;
+    }
+
+    const currentType = selectedLine.timingGate?.targetType ?? "pass";
+    if (selectedLine.timingGate && currentType === mode) {
+      setTimingGateEnabled(true);
+      return;
+    }
+
+    beginTimingGate(selectedLine, mode);
   }
 
   function setTimingGateEnabled(enabled: boolean) {
@@ -4514,8 +4536,9 @@ export default function Home() {
                 {(selectedLine.animationKind === "run" || selectedLine.animationKind === "rotation") && (
                   <div className="inspectorGroup timingGateInspector">
                     <div className="inspectorGroupTitle">Timing i bevegelsen</div>
+
                     <label className="fieldLabel">
-                      Start på pasning
+                      Start løp
                       <select
                         className="darkInput"
                         value={selectedMovementStartPassId}
@@ -4529,11 +4552,9 @@ export default function Home() {
                         ))}
                       </select>
                     </label>
-                    <p className="inspectorHelp">
-                      Velg hvilken pasning som skal utløse hele denne spillerens løpssekvens. Spilleren står i ro fram til pasningen slås; deretter tilpasses løpsfarten til SYNK og mottak.
-                    </p>
+
                     <label className="fieldLabel">
-                      Etter mottak
+                      Ball etter mottak
                       <select
                         className="darkInput"
                         value={selectedMovementCarriesBall ? "carry" : "leave"}
@@ -4543,111 +4564,83 @@ export default function Home() {
                         <option value="leave">Fortsett uten ball</option>
                       </select>
                     </label>
-                    <p className="inspectorHelp">
-                      «Fortsett uten ball» lar spilleren løpe videre etter SYNK/mottak, mens ballen blir i mottakspunktet til en eventuell ny pasning starter.
-                    </p>
-                    {selectedLine.timingGate ? (
-                      <>
-                        <div className="timingGateStatus">
-                          <span className="timingGateDot">T</span>
-                          <div>
-                            <strong>
-                              {selectedLine.timingGate.enabled === false ? "SYNK slått av" : "Passering synkronisert"}
-                            </strong>
-                            <small>
-                              {(selectedLine.timingGate.targetType ?? "pass") === "run"
-                                ? selectedTimingTarget
-                                  ? "Med en annen spillers løp"
-                                  : "Koblet løp mangler"
-                                : selectedTimingPass
-                                  ? `Med pasning${selectedTimingPass.sequenceOrder ? ` steg ${selectedTimingPass.sequenceOrder}` : ""}`
-                                  : "Koblet pasning mangler"}
-                            </small>
-                          </div>
-                        </div>
 
+                    <label className="fieldLabel">
+                      SYNK
+                      <select
+                        className="darkInput"
+                        value={selectedSyncMode}
+                        onChange={(event) => setSelectedSyncMode(event.target.value as "off" | "pass" | "run")}
+                      >
+                        <option value="off">Av</option>
+                        <option value="pass">Mot pasning</option>
+                        <option value="run">Mot spillerløp</option>
+                      </select>
+                    </label>
+
+                    {timingLinkDraft?.runLineId === selectedLine.id ? (
+                      <div className="timingGateStatus">
+                        <span className="timingGateDot">T</span>
+                        <div>
+                          <strong>
+                            {timingLinkDraft.stage === "place" ? "Sett T-punkt" : "Velg SYNK-mål"}
+                          </strong>
+                          <small>
+                            {timingLinkDraft.stage === "place"
+                              ? "Klikk ønsket sted på dette løpet."
+                              : timingLinkDraft.targetType === "pass"
+                                ? "Klikk pasningslinjen."
+                                : "Klikk ønsket punkt på den andre spillerens løp."}
+                          </small>
+                        </div>
+                        <button className="miniButton text" type="button" onClick={cancelTimingGate}>Avbryt</button>
+                      </div>
+                    ) : selectedSyncMode === "pass" && selectedLine.timingGate ? (
+                      <>
                         <label className="fieldLabel">
-                          SYNK-punkt
+                          Tidspunkt
                           <select
                             className="darkInput"
-                            value={selectedLine.timingGate.enabled === false ? "off" : "on"}
-                            onChange={(event) => setTimingGateEnabled(event.target.value === "on")}
+                            value={selectedLine.timingGate.passEvent ?? "start"}
+                            onChange={(event) => setTimingPassEvent(event.target.value as "start" | "end" | "progress")}
                           >
-                            <option value="on">På</option>
-                            <option value="off">Av – behold punktet</option>
+                            <option value="start">Når pasningen slås</option>
+                            <option value="end">Når ballen ankommer</option>
+                            <option value="progress">Underveis i pasningen</option>
                           </select>
                         </label>
 
-                        {(selectedLine.timingGate.targetType ?? "pass") === "pass" && (
-                          <>
-                            <label className="fieldLabel">
-                              Synkroniser med
-                              <select
-                                className="darkInput"
-                                value={selectedLine.timingGate.passEvent ?? "start"}
-                                onChange={(event) => setTimingPassEvent(event.target.value as "start" | "end" | "progress")}
-                              >
-                                <option value="start">Når pasningen slås</option>
-                                <option value="end">Når ballen ankommer</option>
-                                <option value="progress">Ved punkt underveis</option>
-                              </select>
-                            </label>
-                            {(selectedLine.timingGate.passEvent ?? "start") === "progress" && (
-                              <label className="rangeField">
-                                <span>
-                                  <b>Punkt på pasningen</b>
-                                  <em>{Math.round((selectedLine.timingGate.passProgress ?? 0.5) * 100)}%</em>
-                                </span>
-                                <input
-                                  type="range"
-                                  min="0"
-                                  max="1"
-                                  step="0.01"
-                                  value={selectedLine.timingGate.passProgress ?? 0.5}
-                                  onChange={(event) => setTimingPassProgress(Number(event.target.value))}
-                                />
-                              </label>
-                            )}
-                          </>
+                        {(selectedLine.timingGate.passEvent ?? "start") === "progress" && (
+                          <label className="rangeField">
+                            <span>
+                              <b>Ballens posisjon</b>
+                              <em>{Math.round((selectedLine.timingGate.passProgress ?? 0.5) * 100)}%</em>
+                            </span>
+                            <input
+                              type="range"
+                              min="0"
+                              max="1"
+                              step="0.01"
+                              value={selectedLine.timingGate.passProgress ?? 0.5}
+                              onChange={(event) => setTimingPassProgress(Number(event.target.value))}
+                            />
+                          </label>
                         )}
 
-                        <p className="inspectorHelp">
-                          {(selectedLine.timingGate.targetType ?? "pass") === "run"
-                            ? "T-punktet på denne spilleren og S-punktet på den andre spilleren passeres samtidig. Spillerfarten tilpasses."
-                            : selectedLine.timingGate.passEvent === "end"
-                              ? "Spilleren passerer T-punktet akkurat når ballen når slutten av den valgte pasningen."
-                              : selectedLine.timingGate.passEvent === "progress"
-                                ? "Spilleren passerer T-punktet samtidig som ballen når valgt prosent av pasningsbanen."
-                                : "Spilleren passerer T-punktet akkurat når den valgte pasningen slås."}
-                        </p>
+                        <button className="secondaryButton full" type="button" onClick={() => beginTimingGate(selectedLine, "pass")}>
+                          ◎ Sett T-punkt og velg pasning
+                        </button>
+                      </>
+                    ) : selectedSyncMode === "run" && selectedLine.timingGate ? (
+                      <button className="secondaryButton full" type="button" onClick={() => beginTimingGate(selectedLine, "run")}>
+                        ◎ Sett punkter på begge løp
+                      </button>
+                    ) : null}
 
-                        <div className="linePointActions">
-                          <button className="secondaryButton full" type="button" onClick={() => beginTimingGate(selectedLine, "pass")}>↻ Koble til pasning</button>
-                          <button className="secondaryButton full" type="button" onClick={() => beginTimingGate(selectedLine, "run")}>↻ Koble til spillerløp</button>
-                          <button className="secondaryButton full" type="button" onClick={removeTimingGate}>− Fjern SYNK</button>
-                        </div>
-                      </>
-                    ) : timingLinkDraft?.runLineId === selectedLine.id ? (
-                      <>
-                        <p className="inspectorHelp">
-                          {timingLinkDraft.stage === "place"
-                            ? "Klikk på denne løpslinjen der du vil plassere T-punktet."
-                            : timingLinkDraft.targetType === "pass"
-                              ? "T-punktet er satt. Klikk nå på pasningslinjen du vil koble til."
-                              : "T-punktet er satt. Klikk nå på ønsket punkt på en annen spillers løp."}
-                        </p>
-                        <button className="secondaryButton full" type="button" onClick={cancelTimingGate}>Avbryt timing</button>
-                      </>
-                    ) : (
-                      <>
-                        <p className="inspectorHelp">
-                          Synkroniser et punkt i dette løpet med en pasningshendelse eller med et punkt i en annen spillers løp.
-                        </p>
-                        <div className="linePointActions">
-                          <button className="secondaryButton full" type="button" onClick={() => beginTimingGate(selectedLine, "pass")}>＋ SYNK mot pasning</button>
-                          <button className="secondaryButton full" type="button" onClick={() => beginTimingGate(selectedLine, "run")}>＋ SYNK mot spillerløp</button>
-                        </div>
-                      </>
+                    {selectedLine.timingGate && (
+                      <button className="miniButton text" type="button" onClick={removeTimingGate}>
+                        Fjern lagret SYNK
+                      </button>
                     )}
                   </div>
                 )}

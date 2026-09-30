@@ -93,7 +93,14 @@ type BoardLine = {
   manualColor?: boolean;
   timingGate?: {
     progress: number;
-    passLineId: string;
+    enabled?: boolean;
+    targetType?: "pass" | "run";
+    targetLineId?: string;
+    targetProgress?: number;
+    passEvent?: "start" | "end" | "progress";
+    passProgress?: number;
+    // Legacy field so older saved tactics still load correctly.
+    passLineId?: string;
   };
 };
 
@@ -174,6 +181,7 @@ type LinePointDrag = {
 type TimingLinkDraft = {
   runLineId: string;
   stage: "place" | "link";
+  targetType: "pass" | "run";
   progress?: number;
 };
 
@@ -695,12 +703,15 @@ export default function Home() {
     () => lines.find((line) => line.id === selectedLineId) ?? null,
     [lines, selectedLineId],
   );
-  const selectedTimingPass = useMemo(
-    () => selectedLine?.timingGate
-      ? lines.find((line) => line.id === selectedLine.timingGate?.passLineId) ?? null
-      : null,
-    [lines, selectedLine],
-  );
+  const selectedTimingTarget = useMemo(() => {
+    const gate = selectedLine?.timingGate;
+    if (!gate) return null;
+    const targetId = gate.targetLineId ?? gate.passLineId;
+    return targetId ? lines.find((line) => line.id === targetId) ?? null : null;
+  }, [lines, selectedLine]);
+  const selectedTimingPass = selectedTimingTarget?.animationKind === "pass"
+    ? selectedTimingTarget
+    : null;
   const animatedPassOptions = useMemo(
     () => lines
       .filter((line) =>
@@ -1313,11 +1324,44 @@ export default function Home() {
           const endpointTime = endpointEvents[0]?.time;
 
           const gate = movementLine.timingGate;
-          const linkedPass = gate
-            ? passLines.find((passLine) => passLine.id === gate.passLineId)
+          const gateEnabled = Boolean(gate && gate.enabled !== false);
+          const gateProgress = gateEnabled
+            ? clamp(gate?.progress ?? 0.5, 0.02, 0.98)
             : undefined;
-          const gateTime = linkedPass?.timingStart;
-          const gateProgress = gate ? clamp(gate.progress, 0.02, 0.98) : undefined;
+          let gateTime: number | undefined;
+
+          if (gateEnabled && gate) {
+            const targetType = gate.targetType ?? "pass";
+            const targetId = gate.targetLineId ?? gate.passLineId;
+
+            if (targetType === "run") {
+              const linkedRun = animatedLines.find((candidate) =>
+                candidate.id === targetId &&
+                (candidate.animationKind === "run" || candidate.animationKind === "rotation") &&
+                candidate.timingStart !== undefined &&
+                candidate.timingDuration !== undefined
+              );
+              if (linkedRun?.timingStart !== undefined && linkedRun.timingDuration !== undefined) {
+                gateTime =
+                  linkedRun.timingStart +
+                  linkedRun.timingDuration * clamp(gate.targetProgress ?? 1, 0.02, 0.98);
+              }
+            } else {
+              const linkedPass = passLines.find((passLine) => passLine.id === targetId);
+              if (linkedPass?.timingStart !== undefined && linkedPass.timingDuration !== undefined) {
+                const event = gate.passEvent ?? "start";
+                if (event === "end") {
+                  gateTime = linkedPass.timingStart + linkedPass.timingDuration;
+                } else if (event === "progress") {
+                  gateTime =
+                    linkedPass.timingStart +
+                    linkedPass.timingDuration * clamp(gate.passProgress ?? 0.5, 0, 1);
+                } else {
+                  gateTime = linkedPass.timingStart;
+                }
+              }
+            }
+          }
 
           let duration = natural;
 
@@ -1359,7 +1403,12 @@ export default function Home() {
     };
 
     schedulePasses();
-    scheduleMovements();
+    // Run-to-run sync may point to a sequence scheduled later. Repeating the
+    // deterministic movement pass lets those dependencies settle while the
+    // pass timing remains the master clock.
+    for (let iteration = 0; iteration < 6; iteration += 1) {
+      scheduleMovements();
+    }
 
     for (const object of scene.objects) {
       const actorLines = animatedLines
@@ -2544,7 +2593,7 @@ export default function Home() {
     );
   }
 
-  function beginTimingGate(line: BoardLine) {
+  function beginTimingGate(line: BoardLine, targetType: "pass" | "run") {
     if (line.animationKind !== "run" && line.animationKind !== "rotation") {
       setStatus("Timingpunkt brukes på et animert løp eller en animert rullering.");
       return;
@@ -2552,8 +2601,50 @@ export default function Home() {
     setTool("select");
     setSelectedLineId(line.id);
     setSelectedId(null);
-    setTimingLinkDraft({ runLineId: line.id, stage: "place" });
-    setStatus("Klikk på løpslinjen der spilleren skal passere akkurat idet pasningen slås.");
+    setTimingLinkDraft({ runLineId: line.id, stage: "place", targetType });
+    setStatus(
+      targetType === "pass"
+        ? "Klikk på løpslinjen der spilleren skal være ved pasningshendelsen."
+        : "Klikk på løpslinjen der denne spilleren skal være samtidig med den andre spilleren.",
+    );
+  }
+
+  function setTimingGateEnabled(enabled: boolean) {
+    if (!selectedLineId) return;
+    mutateCurrentScene((scene) => {
+      const line = scene.lines.find((item) => item.id === selectedLineId);
+      if (!line?.timingGate) return;
+      line.timingGate.enabled = enabled;
+      recalculateHiddenLineTiming(scene);
+    });
+    setPlayhead(0);
+    setStatus(enabled ? "SYNK-punktet er aktivt." : "SYNK-punktet er slått av, men beholdt.");
+  }
+
+  function setTimingPassEvent(event: "start" | "end" | "progress") {
+    if (!selectedLineId) return;
+    mutateCurrentScene((scene) => {
+      const line = scene.lines.find((item) => item.id === selectedLineId);
+      if (!line?.timingGate) return;
+      line.timingGate.targetType = "pass";
+      line.timingGate.passEvent = event;
+      if (line.timingGate.passProgress === undefined) line.timingGate.passProgress = 0.5;
+      recalculateHiddenLineTiming(scene);
+    });
+    setPlayhead(0);
+  }
+
+  function setTimingPassProgress(progress: number) {
+    if (!selectedLineId) return;
+    mutateCurrentScene((scene) => {
+      const line = scene.lines.find((item) => item.id === selectedLineId);
+      if (!line?.timingGate) return;
+      line.timingGate.targetType = "pass";
+      line.timingGate.passEvent = "progress";
+      line.timingGate.passProgress = clamp(progress, 0, 1);
+      recalculateHiddenLineTiming(scene);
+    });
+    setPlayhead(0);
   }
 
   function cancelTimingGate() {
@@ -2579,11 +2670,12 @@ export default function Home() {
     const lineToDelete = lines.find((line) => line.id === selectedLineId);
     mutateCurrentScene((scene) => {
       scene.lines = scene.lines.filter((line) => line.id !== selectedLineId);
-      scene.lines = scene.lines.map((line) =>
-        line.timingGate?.passLineId === selectedLineId
+      scene.lines = scene.lines.map((line) => {
+        const targetId = line.timingGate?.targetLineId ?? line.timingGate?.passLineId;
+        return targetId === selectedLineId
           ? { ...line, timingGate: undefined }
-          : line
-      );
+          : line;
+      });
 
       if (lineToDelete?.sequenceId && lineToDelete.actorId && lineToDelete.animationKind) {
         const remaining = scene.lines.filter((line) => line.sequenceId === lineToDelete.sequenceId);
@@ -2615,30 +2707,80 @@ export default function Home() {
     if (timingLinkDraft) {
       if (timingLinkDraft.stage === "place") {
         if (line.id !== timingLinkDraft.runLineId) {
-          setStatus("Klikk på den valgte løpslinjen for å plassere timingpunktet.");
+          setStatus("Klikk på den valgte løpslinjen for å plassere T-punktet.");
           return;
         }
         const progress = closestProgressOnPath(linePoints(line), boardPoint(event));
         setTimingLinkDraft({ ...timingLinkDraft, stage: "link", progress });
         setSelectedLineId(line.id);
         setSelectedId(null);
-        setStatus("Timingpunkt satt. Klikk nå på den animerte pasningen som skal slås når spilleren passerer punktet.");
+        setStatus(
+          timingLinkDraft.targetType === "pass"
+            ? "T-punkt satt. Klikk på pasningslinjen du vil synkronisere mot."
+            : "T-punkt satt. Klikk på punktet på en annen spillers løpslinje som skal treffes samtidig.",
+        );
         return;
       }
 
-      if (line.animationKind !== "pass") {
-        setStatus("Velg en animert pasningslinje. Det er starten på denne pasningen som skal styre timingen.");
+      const sourceLine = lines.find((item) => item.id === timingLinkDraft.runLineId);
+      if (!sourceLine) {
+        setTimingLinkDraft(null);
+        return;
+      }
+
+      if (timingLinkDraft.targetType === "pass") {
+        if (line.animationKind !== "pass") {
+          setStatus("Velg en animert pasningslinje.");
+          return;
+        }
+
+        const runLineId = timingLinkDraft.runLineId;
+        const progress = timingLinkDraft.progress ?? 0.5;
+        const passProgress = closestProgressOnPath(linePoints(line), boardPoint(event));
+        mutateCurrentScene((scene) => {
+          const runLine = scene.lines.find((item) => item.id === runLineId);
+          if (!runLine) return;
+          runLine.timingGate = {
+            progress: clamp(progress, 0.02, 0.98),
+            enabled: true,
+            targetType: "pass",
+            targetLineId: line.id,
+            passLineId: line.id,
+            passEvent: "start",
+            passProgress: clamp(passProgress, 0, 1),
+          };
+          recalculateHiddenLineTiming(scene);
+        });
+        setTimingLinkDraft(null);
+        setSelectedLineId(runLineId);
+        setSelectedId(null);
+        setPlayhead(0);
+        setStatus("SYNK koblet til pasning. Velg pasningsstart, ankomst eller punkt underveis i inspektøren.");
+        return;
+      }
+
+      if (
+        line.id === sourceLine.id ||
+        (line.animationKind !== "run" && line.animationKind !== "rotation") ||
+        !line.actorId ||
+        line.actorId === sourceLine.actorId
+      ) {
+        setStatus("Velg et punkt på en annen spillers animerte løp.");
         return;
       }
 
       const runLineId = timingLinkDraft.runLineId;
       const progress = timingLinkDraft.progress ?? 0.5;
+      const targetProgress = closestProgressOnPath(linePoints(line), boardPoint(event));
       mutateCurrentScene((scene) => {
         const runLine = scene.lines.find((item) => item.id === runLineId);
         if (!runLine) return;
         runLine.timingGate = {
           progress: clamp(progress, 0.02, 0.98),
-          passLineId: line.id,
+          enabled: true,
+          targetType: "run",
+          targetLineId: line.id,
+          targetProgress: clamp(targetProgress, 0.02, 0.98),
         };
         recalculateHiddenLineTiming(scene);
       });
@@ -2646,7 +2788,7 @@ export default function Home() {
       setSelectedLineId(runLineId);
       setSelectedId(null);
       setPlayhead(0);
-      setStatus("Timingpunkt koblet. Spilleren passerer punktet idet den valgte pasningen slås, uten å stoppe.");
+      setStatus("Løpene er synkronisert. Begge spillerne passerer de valgte punktene samtidig.");
       return;
     }
 
@@ -3712,7 +3854,14 @@ export default function Home() {
                         pointerEvents={tool === "select" ? "stroke" : "none"}
                         onPointerDown={(event) => handleLinePointerDown(event, line)}
                       />
-                      {timingLinkDraft?.stage === "link" && line.animationKind === "pass" && (
+                      {timingLinkDraft?.stage === "link" && (
+                        (timingLinkDraft.targetType === "pass" && line.animationKind === "pass") ||
+                        (
+                          timingLinkDraft.targetType === "run" &&
+                          (line.animationKind === "run" || line.animationKind === "rotation") &&
+                          line.actorId !== lines.find((item) => item.id === timingLinkDraft.runLineId)?.actorId
+                        )
+                      ) && (
                         <polyline
                           points={pointsString}
                           fill="none"
@@ -3760,11 +3909,55 @@ export default function Home() {
                           className={`timingGateMarker ${draftTimingProgress !== undefined ? "draft" : ""}`}
                           transform={`translate(${timingPoint.x} ${timingPoint.y})`}
                           pointerEvents="none"
+                          opacity={line.timingGate?.enabled === false ? 0.42 : 1}
                         >
-                          <circle r="10" fill="#071511" stroke="#72e5ff" strokeWidth="2.2" />
-                          <text y="3.6" textAnchor="middle" fill="#bff5ff" fontSize="8.5" fontWeight="950">T</text>
+                          <circle
+                            r="10"
+                            fill="#071511"
+                            stroke={line.timingGate?.enabled === false ? "#8a9693" : "#72e5ff"}
+                            strokeWidth="2.2"
+                            strokeDasharray={line.timingGate?.enabled === false ? "3 2" : undefined}
+                          />
+                          <text
+                            y="3.6"
+                            textAnchor="middle"
+                            fill={line.timingGate?.enabled === false ? "#aab4b1" : "#bff5ff"}
+                            fontSize="8.5"
+                            fontWeight="950"
+                          >
+                            T
+                          </text>
                         </g>
-                      )}
+                      ))}
+
+                      {editGuidesVisible && lines
+                        .filter((sourceLine) => {
+                          const gate = sourceLine.timingGate;
+                          const targetId = gate?.targetLineId ?? gate?.passLineId;
+                          return (
+                            gate &&
+                            gate.enabled !== false &&
+                            gate.targetType === "run" &&
+                            targetId === line.id &&
+                            gate.targetProgress !== undefined
+                          );
+                        })
+                        .map((sourceLine) => {
+                          const targetPoint = pointAlongPath(
+                            points,
+                            clamp(sourceLine.timingGate?.targetProgress ?? 0.5, 0.02, 0.98),
+                          );
+                          return (
+                            <g
+                              key={`sync-target-${sourceLine.id}`}
+                              transform={`translate(${targetPoint.x} ${targetPoint.y})`}
+                              pointerEvents="none"
+                            >
+                              <circle r="10" fill="#071511" stroke="#70f0a6" strokeWidth="2.2" />
+                              <text y="3.6" textAnchor="middle" fill="#dfffea" fontSize="8.5" fontWeight="950">S</text>
+                            </g>
+                          );
+                        })}
 
                       {selected && tool === "select" && points.map((point, pointIndex) => {
                         const isEnd = pointIndex === points.length - 1;
@@ -4353,37 +4546,102 @@ export default function Home() {
                         <div className="timingGateStatus">
                           <span className="timingGateDot">T</span>
                           <div>
-                            <strong>Passering synkronisert</strong>
+                            <strong>
+                              {selectedLine.timingGate.enabled === false ? "SYNK slått av" : "Passering synkronisert"}
+                            </strong>
                             <small>
-                              {selectedTimingPass
-                                ? `Med pasning${selectedTimingPass.sequenceOrder ? ` steg ${selectedTimingPass.sequenceOrder}` : ""}`
-                                : "Koblet pasning mangler"}
+                              {(selectedLine.timingGate.targetType ?? "pass") === "run"
+                                ? selectedTimingTarget
+                                  ? "Med en annen spillers løp"
+                                  : "Koblet løp mangler"
+                                : selectedTimingPass
+                                  ? `Med pasning${selectedTimingPass.sequenceOrder ? ` steg ${selectedTimingPass.sequenceOrder}` : ""}`
+                                  : "Koblet pasning mangler"}
                             </small>
                           </div>
                         </div>
+
+                        <label className="fieldLabel">
+                          SYNK-punkt
+                          <select
+                            className="darkInput"
+                            value={selectedLine.timingGate.enabled === false ? "off" : "on"}
+                            onChange={(event) => setTimingGateEnabled(event.target.value === "on")}
+                          >
+                            <option value="on">På</option>
+                            <option value="off">Av – behold punktet</option>
+                          </select>
+                        </label>
+
+                        {(selectedLine.timingGate.targetType ?? "pass") === "pass" && (
+                          <>
+                            <label className="fieldLabel">
+                              Synkroniser med
+                              <select
+                                className="darkInput"
+                                value={selectedLine.timingGate.passEvent ?? "start"}
+                                onChange={(event) => setTimingPassEvent(event.target.value as "start" | "end" | "progress")}
+                              >
+                                <option value="start">Når pasningen slås</option>
+                                <option value="end">Når ballen ankommer</option>
+                                <option value="progress">Ved punkt underveis</option>
+                              </select>
+                            </label>
+                            {(selectedLine.timingGate.passEvent ?? "start") === "progress" && (
+                              <label className="rangeField">
+                                <span>
+                                  <b>Punkt på pasningen</b>
+                                  <em>{Math.round((selectedLine.timingGate.passProgress ?? 0.5) * 100)}%</em>
+                                </span>
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="1"
+                                  step="0.01"
+                                  value={selectedLine.timingGate.passProgress ?? 0.5}
+                                  onChange={(event) => setTimingPassProgress(Number(event.target.value))}
+                                />
+                              </label>
+                            )}
+                          </>
+                        )}
+
                         <p className="inspectorHelp">
-                          Spilleren løper kontinuerlig og passerer T-punktet akkurat når den koblede pasningen slås.
+                          {(selectedLine.timingGate.targetType ?? "pass") === "run"
+                            ? "T-punktet på denne spilleren og S-punktet på den andre spilleren passeres samtidig. Spillerfarten tilpasses."
+                            : selectedLine.timingGate.passEvent === "end"
+                              ? "Spilleren passerer T-punktet akkurat når ballen når slutten av den valgte pasningen."
+                              : selectedLine.timingGate.passEvent === "progress"
+                                ? "Spilleren passerer T-punktet samtidig som ballen når valgt prosent av pasningsbanen."
+                                : "Spilleren passerer T-punktet akkurat når den valgte pasningen slås."}
                         </p>
+
                         <div className="linePointActions">
-                          <button className="secondaryButton full" type="button" onClick={() => beginTimingGate(selectedLine)}>↻ Flytt / koble på nytt</button>
-                          <button className="secondaryButton full" type="button" onClick={removeTimingGate}>− Fjern timing</button>
+                          <button className="secondaryButton full" type="button" onClick={() => beginTimingGate(selectedLine, "pass")}>↻ Koble til pasning</button>
+                          <button className="secondaryButton full" type="button" onClick={() => beginTimingGate(selectedLine, "run")}>↻ Koble til spillerløp</button>
+                          <button className="secondaryButton full" type="button" onClick={removeTimingGate}>− Fjern SYNK</button>
                         </div>
                       </>
                     ) : timingLinkDraft?.runLineId === selectedLine.id ? (
                       <>
                         <p className="inspectorHelp">
                           {timingLinkDraft.stage === "place"
-                            ? "Klikk på denne løpslinjen der spilleren skal passere idet pasningen slås."
-                            : "T-punktet er satt. Klikk nå på pasningslinjen som skal styre tidspunktet."}
+                            ? "Klikk på denne løpslinjen der du vil plassere T-punktet."
+                            : timingLinkDraft.targetType === "pass"
+                              ? "T-punktet er satt. Klikk nå på pasningslinjen du vil koble til."
+                              : "T-punktet er satt. Klikk nå på ønsket punkt på en annen spillers løp."}
                         </p>
                         <button className="secondaryButton full" type="button" onClick={cancelTimingGate}>Avbryt timing</button>
                       </>
                     ) : (
                       <>
                         <p className="inspectorHelp">
-                          Synkroniser et punkt på løpet med starten på en pasning. Spilleren starter automatisk tidsnok og stopper ikke underveis.
+                          Synkroniser et punkt i dette løpet med en pasningshendelse eller med et punkt i en annen spillers løp.
                         </p>
-                        <button className="secondaryButton full" type="button" onClick={() => beginTimingGate(selectedLine)}>＋ Timingpunkt</button>
+                        <div className="linePointActions">
+                          <button className="secondaryButton full" type="button" onClick={() => beginTimingGate(selectedLine, "pass")}>＋ SYNK mot pasning</button>
+                          <button className="secondaryButton full" type="button" onClick={() => beginTimingGate(selectedLine, "run")}>＋ SYNK mot spillerløp</button>
+                        </div>
                       </>
                     )}
                   </div>

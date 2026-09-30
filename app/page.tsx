@@ -243,17 +243,33 @@ const lineColors = [
   { value: "#c6b9ff", label: "Lilla" },
 ];
 
+const movementActorColors = [
+  "#3a8bff",
+  "#ff9f43",
+  "#70f0a6",
+  "#ff5c6c",
+  "#c6b9ff",
+  "#f7dd72",
+  "#22d3ee",
+  "#f472b6",
+];
+
 function defaultLineColor(type: BoardLine["type"]) {
   if (type === "arrow") return "#f7dd72";
   if (type === "run") return "#3a8bff";
   return "#ff9f43";
 }
 
-function resolvedLineColor(line: BoardLine) {
+function resolvedLineColor(line: BoardLine, actorColor?: string) {
   if (line.manualColor && line.color) return line.color;
   // Older white/default lines migrate naturally to type colors.
   // Preserve older non-white choices as intentional custom colors.
   if (line.color && line.color.toLowerCase() !== "#ffffff" && line.color.toLowerCase() !== "#fff") return line.color;
+  if (
+    actorColor &&
+    line.actorId &&
+    (line.animationKind === "run" || line.animationKind === "rotation")
+  ) return actorColor;
   return defaultLineColor(line.type);
 }
 
@@ -537,6 +553,7 @@ export default function Home() {
     run: true,
     rotation: true,
   });
+  const [hiddenMovementActorIds, setHiddenMovementActorIds] = useState<string[]>([]);
   const [speed, setSpeed] = useState(1);
   const [lineAnimationMode, setLineAnimationMode] = useState<LineAnimationMode>("off");
   const [lineAnimationSequenceId, setLineAnimationSequenceId] = useState(() => makeId());
@@ -756,10 +773,38 @@ export default function Home() {
   const hiddenLines = useMemo(() => lines.filter((line) => line.hidden), [lines]);
   const hiddenItemCount = hiddenObjects.length + hiddenLines.length;
 
+  const movementActors = useMemo(() => {
+    const ids = new Set(
+      lines
+        .filter((line) =>
+          line.actorId &&
+          (line.animationKind === "run" || line.animationKind === "rotation")
+        )
+        .map((line) => line.actorId as string),
+    );
+
+    const orderedIds = [
+      ...objects.filter((object) => ids.has(object.id)).map((object) => object.id),
+      ...Array.from(ids).filter((id) => !objects.some((object) => object.id === id)),
+    ];
+
+    return orderedIds.map((id, index) => ({
+      id,
+      object: objects.find((object) => object.id === id) ?? null,
+      color: movementActorColors[index % movementActorColors.length],
+    }));
+  }, [objects, lines]);
+
+  const movementActorColor = (actorId?: string) =>
+    movementActors.find((actor) => actor.id === actorId)?.color;
+
+  const lineDisplayColor = (line: BoardLine) =>
+    resolvedLineColor(line, movementActorColor(line.actorId));
+
   const visibleSnapPoints = useMemo(() => {
     const groups = new Map<string, { point: Point; count: number }>();
     for (const line of lines) {
-      if (line.hidden || !lineTypeVisibility[line.type] || !line.endSnapId) continue;
+      if (!lineVisibleNow(line) || !line.endSnapId) continue;
       const current = groups.get(line.endSnapId);
       if (current) current.count += 1;
       else groups.set(line.endSnapId, { point: { ...line.end }, count: 1 });
@@ -767,7 +812,7 @@ export default function Home() {
     return Array.from(groups.entries())
       .filter(([id, value]) => value.count >= 2 && !id.startsWith("manual:"))
       .map(([id, value]) => ({ id, ...value }));
-  }, [lines, lineTypeVisibility]);
+  }, [lines, lineTypeVisibility, hiddenMovementActorIds]);
 
   const sceneDuration = useMemo(() => {
     const objectEnds = objects.filter(hasMotion).map((object) => (object.motionStart ?? 0) + (object.motionDuration ?? 2));
@@ -803,7 +848,13 @@ export default function Home() {
 
   function lineVisibleNow(line: BoardLine) {
     if (line.hidden) return false;
-    return lineTypeVisibility[line.type];
+    if (!lineTypeVisibility[line.type]) return false;
+    if (
+      line.actorId &&
+      (line.animationKind === "run" || line.animationKind === "rotation") &&
+      hiddenMovementActorIds.includes(line.actorId)
+    ) return false;
+    return true;
   }
 
   function snapshotForHistory(snapshot: Scene[]) {
@@ -2382,6 +2433,28 @@ export default function Home() {
     setStatus("Alle pasnings-, løps- og rulleringslinjer er skjult.");
   }
 
+  function toggleMovementActorLines(actorId: string) {
+    setHiddenMovementActorIds((current) =>
+      current.includes(actorId)
+        ? current.filter((id) => id !== actorId)
+        : [...current, actorId]
+    );
+
+    const actor = movementActors.find((item) => item.id === actorId);
+    const hidden = hiddenMovementActorIds.includes(actorId);
+    setStatus(
+      hidden
+        ? `${actor?.object ? motionLabel(actor.object) : "Spiller"} sine løpslinjer vises igjen.`
+        : `${actor?.object ? motionLabel(actor.object) : "Spiller"} sine løpslinjer skjules.`
+    );
+  }
+
+  function showAllMovementActorLines() {
+    setHiddenMovementActorIds([]);
+    setLineTypeVisibility((current) => ({ ...current, run: true, rotation: true }));
+    setStatus("Alle spillerløp vises.");
+  }
+
   function clearMovement() {
     if (!selectedId) return;
     updateSelected({ target: undefined, motionPath: undefined, motionStart: undefined, motionDuration: undefined });
@@ -3669,6 +3742,41 @@ export default function Home() {
                 </button>
                 {openToolPanel === "Synlighet" && (
                   <div className="toolDropdownBody visibilityPanel">
+                    {movementActors.length > 0 && (
+                      <div className="visibilityGroup">
+                        <div className="visibilityHeadingRow">
+                          <span className="visibilityHeading">Spillerløp</span>
+                          {hiddenMovementActorIds.length > 0 && (
+                            <button className="miniButton text" type="button" onClick={showAllMovementActorLines}>Vis alle</button>
+                          )}
+                        </div>
+                        <div className="hiddenItemList">
+                          {movementActors.map((actor) => {
+                            const visible = !hiddenMovementActorIds.includes(actor.id);
+                            return (
+                              <button
+                                key={actor.id}
+                                type="button"
+                                className="hiddenItemRow"
+                                onClick={() => toggleMovementActorLines(actor.id)}
+                                aria-pressed={visible}
+                                title={visible ? "Skjul bare denne spillerens løpslinjer" : "Vis denne spillerens løpslinjer"}
+                              >
+                                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <span
+                                    className="typeColorDot"
+                                    style={{ "--type-color": actor.color } as CSSProperties}
+                                  />
+                                  {actor.object ? motionLabel(actor.object) : "Spiller"}
+                                </span>
+                                <b>{visible ? "Skjul" : "Vis"}</b>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="visibilityGroup">
                       <div className="visibilityHeadingRow">
                         <span className="visibilityHeading">Skjult individuelt</span>
@@ -3717,17 +3825,17 @@ export default function Home() {
                 </button>
                 {openToolPanel === "Farge" && (
                   <div className="toolDropdownBody autoColorLegend">
-                    {([
-                      ["arrow", "➜", "Pasning"],
-                      ["run", "⋯", "Løp"],
-                      ["rotation", "↻", "Rullering"],
-                    ] as Array<[BoardLine["type"], string, string]>).map(([type, icon, label]) => (
-                      <div className="autoColorRow" key={type}>
-                        <span className="typeColorDot" style={{ "--type-color": defaultLineColor(type) } as CSSProperties} />
-                        <span>{icon} {label}</span>
+                    <div className="autoColorRow">
+                      <span className="typeColorDot" style={{ "--type-color": defaultLineColor("arrow") } as CSSProperties} />
+                      <span>➜ Pasning</span>
+                    </div>
+                    {movementActors.map((actor) => (
+                      <div className="autoColorRow" key={actor.id}>
+                        <span className="typeColorDot" style={{ "--type-color": actor.color } as CSSProperties} />
+                        <span>⋯ {actor.object ? motionLabel(actor.object) : "Spiller"}</span>
                       </div>
                     ))}
-                    <small className="lineColorHint">Fargene settes automatisk. Velg en enkelt linje hvis du vil overstyre fargen.</small>
+                    <small className="lineColorHint">Hver spiller får automatisk sin egen løpsfarge. En enkelt linje kan fortsatt overstyres i inspektøren.</small>
                   </div>
                 )}
               </section>
@@ -3849,7 +3957,7 @@ export default function Home() {
                 {renderPitch()}
 
                 {lines.filter(lineVisibleNow).map((line) => {
-                  const color = resolvedLineColor(line);
+                  const color = lineDisplayColor(line);
                   const isWhite = color.toLowerCase() === "#ffffff" || color.toLowerCase() === "#fff";
                   const points = linePoints(line);
                   const pointsString = linePathPointsString(line);
@@ -3878,7 +3986,22 @@ export default function Home() {
                         points={pointsString}
                         fill="none"
                         stroke="transparent" strokeWidth="18" strokeLinecap="round" strokeLinejoin="round"
-                        pointerEvents={tool === "select" ? "stroke" : "none"}
+                        pointerEvents={
+                          tool !== "select"
+                            ? "none"
+                            : !timingLinkDraft
+                              ? "stroke"
+                              : timingLinkDraft.stage === "place"
+                                ? (line.id === timingLinkDraft.runLineId ? "stroke" : "none")
+                                : timingLinkDraft.targetType === "pass"
+                                  ? (line.animationKind === "pass" ? "stroke" : "none")
+                                  : (
+                                      (line.animationKind === "run" || line.animationKind === "rotation") &&
+                                      line.actorId !== lines.find((item) => item.id === timingLinkDraft.runLineId)?.actorId
+                                        ? "stroke"
+                                        : "none"
+                                    )
+                        }
                         onPointerDown={(event) => handleLinePointerDown(event, line)}
                       />
                       {timingLinkDraft?.stage === "link" && (
@@ -4471,7 +4594,7 @@ export default function Home() {
                   <div className="inspectorGroupTitle">Farge</div>
                   <div className="lineColorPalette" aria-label="Endre farge på valgt linje">
                     {lineColors.map((item) => {
-                      const currentColor = resolvedLineColor(selectedLine);
+                      const currentColor = lineDisplayColor(selectedLine);
                       return (
                         <button
                           key={item.value}
@@ -4488,14 +4611,14 @@ export default function Home() {
                       <span>+</span>
                       <input
                         type="color"
-                        value={resolvedLineColor(selectedLine)}
+                        value={lineDisplayColor(selectedLine)}
                         onChange={(event) => updateSelectedLineColor(event.target.value)}
                         aria-label="Egen linjefarge"
                       />
                     </label>
                   </div>
                   {selectedLine.color && (
-                    <button className="miniButton text" type="button" onClick={() => updateSelectedLineColor(undefined)}>↺ Automatisk typefarge</button>
+                    <button className="miniButton text" type="button" onClick={() => updateSelectedLineColor(undefined)}>↺ Automatisk farge</button>
                   )}
                 </div>
 

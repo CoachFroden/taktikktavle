@@ -3928,7 +3928,7 @@ export default function Home() {
                             T
                           </text>
                         </g>
-                      ))}
+                      )}
 
                       {editGuidesVisible && lines
                         .filter((sourceLine) => {

@@ -1427,7 +1427,7 @@ export default function Home() {
             gateProgress !== undefined &&
             gateTime > start + 0.01
           ) {
-            // Explicit player-to-player SYNK is a hard constraint:
+            // Explicit player-to-player SYNK is the hard timing constraint:
             // the source T-point MUST be crossed at exactly the same time as
             // the target player's S-point. Automatic endpoint/pass timing must
             // not override this.

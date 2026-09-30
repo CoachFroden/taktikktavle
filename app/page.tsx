@@ -1419,16 +1419,28 @@ export default function Home() {
           }
 
           let duration = natural;
+          const hardRunSync = gateEnabled && gate?.targetType === "run";
 
           if (
+            hardRunSync &&
+            gateTime !== undefined &&
+            gateProgress !== undefined &&
+            gateTime > start + 0.01
+          ) {
+            // Explicit player-to-player SYNK is a hard constraint:
+            // the source T-point MUST be crossed at exactly the same time as
+            // the target player's S-point. Automatic endpoint/pass timing must
+            // not override this.
+            duration = Math.max(0.15, (gateTime - start) / gateProgress);
+          } else if (
             endpointTime !== undefined &&
             gateTime !== undefined &&
             gateProgress !== undefined &&
             endpointTime > gateTime + 0.01
           ) {
-            // Fit both constraints when possible: cross the timing point when
-            // the linked pass leaves AND hit the endpoint when the ball event
-            // happens. This changes player speed, never pass timing.
+            // For pass-linked timing, fit both constraints when possible:
+            // cross the timing point at the chosen pass event and still hit
+            // the endpoint at the relevant ball event.
             const fittedDuration = (endpointTime - gateTime) / Math.max(0.02, 1 - gateProgress);
             const fittedStart = gateTime - fittedDuration * gateProgress;
 
@@ -1439,8 +1451,8 @@ export default function Home() {
               duration = Math.max(0.15, endpointTime - start);
             }
           } else if (endpointTime !== undefined) {
-            // The receive/sync point is authoritative. Stretch or compress the
-            // run so the player gets there exactly with the ball.
+            // The receive/sync point is authoritative when there is no hard
+            // player-to-player sync on this movement line.
             duration = Math.max(0.15, endpointTime - start);
           } else if (
             gateTime !== undefined &&
